@@ -1,1 +1,3 @@
 .omc/
+.venv/
+_build/

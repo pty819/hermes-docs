@@ -1,7 +1,31 @@
 import os
 import sys
+import re
 
 # sys.path adjusted for standalone docs repo
+
+# Fix CJK inline markup: docutils doesn't treat Chinese characters as word
+# boundaries, so **bold** adjacent to CJK text renders as literal asterisks.
+# We monkey-patch the Inliner to include CJK ranges in its boundary patterns.
+from docutils.parsers.rst import states
+from docutils.utils import punctuation_chars
+_cjk = (
+    ''.join(chr(c) for c in range(0x4E00, 0x9FFF + 1))   # CJK Unified Ideographs
+    + ''.join(chr(c) for c in range(0x3400, 0x4DBF + 1))   # CJK Extension A
+    + ''.join(chr(c) for c in range(0x3000, 0x303F + 1))   # CJK Symbols and Punctuation
+    + ''.join(chr(c) for c in range(0xFF00, 0xFFEF + 1))   # Fullwidth Forms
+)
+punctuation_chars.delimiters += _cjk
+states.Inliner.start_string_prefix = (
+    '(^|(?<=\\s|[%s%s]))' %
+    (punctuation_chars.openers, punctuation_chars.delimiters)
+)
+states.Inliner.end_string_suffix = (
+    '($|(?=\\s|[\\x00%s%s%s]))' %
+    (punctuation_chars.closing_delimiters,
+     punctuation_chars.closing_delimiters,
+     punctuation_chars.delimiters)
+)
 
 project = "Hermes Agent 架构深度解析"
 copyright = "2026, NousResearch / Community"
