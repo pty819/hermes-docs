@@ -12,13 +12,13 @@ Hermes Agent 架构深度解析
    chapters/prompt-pipeline
    chapters/context-compression
    chapters/session-state
+   chapters/config-management
+   chapters/model-routing
    chapters/cli-ui
    chapters/gateway-rpc
    chapters/mcp-integration
    chapters/plugin-system
    chapters/skill-system
-   chapters/model-routing
-   chapters/config-management
    chapters/security
    chapters/part2/index
    chapters/lessons
