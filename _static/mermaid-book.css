@@ -1,0 +1,267 @@
+:root {
+  --mermaid-frame-bg: linear-gradient(180deg, #fffdf8 0%, #f8fafc 100%);
+  --mermaid-frame-border: #dbe4f0;
+  --mermaid-frame-shadow: rgba(15, 23, 42, 0.08);
+  --mermaid-frame-shadow-hover: rgba(15, 23, 42, 0.14);
+  --mermaid-accent: linear-gradient(90deg, #c2410c 0%, #f59e0b 38%, #3b82f6 100%);
+  --mermaid-scrollbar-thumb: #cbd5e1;
+  --mermaid-scrollbar-track: #f8fafc;
+}
+
+.wy-nav-content .mermaid-container {
+  align-items: flex-start;
+  gap: 0.7rem;
+  margin: 1.6rem 0 1.9rem;
+}
+
+.wy-nav-content pre.mermaid {
+  position: relative;
+  margin: 0;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--mermaid-frame-border);
+  border-radius: 18px;
+  background: var(--mermaid-frame-bg);
+  box-shadow: 0 12px 30px var(--mermaid-frame-shadow);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.wy-nav-content pre.mermaid::before {
+  content: "";
+  position: sticky;
+  display: block;
+  top: 0;
+  left: 0;
+  height: 4px;
+  margin: -0.85rem -0.95rem 0.75rem;
+  border-radius: 18px 18px 0 0;
+  background: var(--mermaid-accent);
+}
+
+.wy-nav-content pre.mermaid:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 36px var(--mermaid-frame-shadow-hover);
+}
+
+.wy-nav-content pre.mermaid::-webkit-scrollbar {
+  height: 10px;
+}
+
+.wy-nav-content pre.mermaid::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--mermaid-scrollbar-thumb);
+}
+
+.wy-nav-content pre.mermaid::-webkit-scrollbar-track {
+  background: var(--mermaid-scrollbar-track);
+}
+
+.wy-nav-content pre.mermaid > svg {
+  display: block;
+  margin: 0 auto;
+  width: auto !important;
+  max-width: min(100%, 980px) !important;
+  height: auto !important;
+  text-rendering: geometricPrecision;
+}
+
+.wy-nav-content .mermaid-container > pre {
+  width: 100%;
+}
+
+.wy-nav-content .mermaid-container > pre > svg {
+  width: auto !important;
+  max-width: min(100%, 980px) !important;
+  height: auto !important;
+}
+
+.wy-nav-content pre.mermaid text {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  font-weight: 500;
+}
+
+.wy-nav-content pre.mermaid .node rect,
+.wy-nav-content pre.mermaid .node circle,
+.wy-nav-content pre.mermaid .node ellipse,
+.wy-nav-content pre.mermaid .node polygon,
+.wy-nav-content pre.mermaid .actor,
+.wy-nav-content pre.mermaid .cluster rect {
+  filter: drop-shadow(0 6px 14px rgba(15, 23, 42, 0.08));
+  stroke-width: 1.5px !important;
+}
+
+.wy-nav-content pre.mermaid .node.default rect,
+.wy-nav-content pre.mermaid .node.default polygon,
+.wy-nav-content pre.mermaid .node.default ellipse,
+.wy-nav-content pre.mermaid .node.default path,
+.wy-nav-content pre.mermaid .flowchart-label rect,
+.wy-nav-content pre.mermaid .label-container {
+  fill: #ececff !important;
+  stroke: #9370db !important;
+}
+
+.wy-nav-content pre.mermaid .node.default .label,
+.wy-nav-content pre.mermaid .node.default text,
+.wy-nav-content pre.mermaid .flowchart-label text,
+.wy-nav-content pre.mermaid .flowchart-label span,
+.wy-nav-content pre.mermaid foreignObject div,
+.wy-nav-content pre.mermaid foreignObject span {
+  color: #243447 !important;
+  fill: #243447 !important;
+}
+
+.wy-nav-content pre.mermaid .cluster rect {
+  fill: #f8fafc !important;
+  stroke: #94a3b8 !important;
+  stroke-dasharray: 6 4;
+}
+
+.wy-nav-content pre.mermaid .cluster-label rect,
+.wy-nav-content pre.mermaid .cluster-label polygon,
+.wy-nav-content pre.mermaid .cluster-label path,
+.wy-nav-content pre.mermaid .cluster-label .label-container {
+  fill: #ececff !important;
+  stroke: #9370db !important;
+}
+
+.wy-nav-content pre.mermaid .cluster-label text,
+.wy-nav-content pre.mermaid .cluster-label tspan,
+.wy-nav-content pre.mermaid .cluster-label foreignObject div,
+.wy-nav-content pre.mermaid .cluster-label foreignObject span {
+  fill: #243447 !important;
+  color: #243447 !important;
+}
+
+.wy-nav-content pre.mermaid .actor,
+.wy-nav-content pre.mermaid .actor-man line,
+.wy-nav-content pre.mermaid .actor-man circle,
+.wy-nav-content pre.mermaid .classBox,
+.wy-nav-content pre.mermaid .classGroup rect,
+.wy-nav-content pre.mermaid .stateGroup rect,
+.wy-nav-content pre.mermaid .stateGroup text,
+.wy-nav-content pre.mermaid .state-note rect,
+.wy-nav-content pre.mermaid .labelBox,
+.wy-nav-content pre.mermaid .loopLine {
+  fill: #ececff !important;
+  stroke: #9370db !important;
+}
+
+.wy-nav-content pre.mermaid .actor text,
+.wy-nav-content pre.mermaid .classBox text,
+.wy-nav-content pre.mermaid .classText,
+.wy-nav-content pre.mermaid .stateGroup text,
+.wy-nav-content pre.mermaid .labelText,
+.wy-nav-content pre.mermaid .loopText,
+.wy-nav-content pre.mermaid text,
+.wy-nav-content pre.mermaid tspan,
+.wy-nav-content pre.mermaid .nodeLabel,
+.wy-nav-content pre.mermaid .edgeLabel,
+.wy-nav-content pre.mermaid .edgeLabel span,
+.wy-nav-content pre.mermaid .edgeLabel div,
+.wy-nav-content pre.mermaid .sequenceNumber {
+  fill: #243447 !important;
+  color: #243447 !important;
+}
+
+.wy-nav-content pre.mermaid .state-start,
+.wy-nav-content pre.mermaid .state-end {
+  fill: #9370db !important;
+  stroke: #7d5bc4 !important;
+}
+
+.wy-nav-content pre.mermaid .edgeLabel rect,
+.wy-nav-content pre.mermaid .labelBkg,
+.wy-nav-content pre.mermaid .labelBox {
+  fill: rgba(255, 255, 255, 0.98) !important;
+  stroke: #d8dff0 !important;
+}
+
+.wy-nav-content pre.mermaid .edgePath path,
+.wy-nav-content pre.mermaid .flowchart-link,
+.wy-nav-content pre.mermaid .messageLine0,
+.wy-nav-content pre.mermaid .messageLine1,
+.wy-nav-content pre.mermaid .relation {
+  stroke-width: 2.15px !important;
+}
+
+.wy-nav-content pre.mermaid .labelBkg,
+.wy-nav-content pre.mermaid .edgeLabel rect {
+  fill: rgba(255, 255, 255, 0.96) !important;
+}
+
+.wy-nav-content pre.mermaid .note {
+  fill: #fffbeb !important;
+  stroke: #f59e0b !important;
+}
+
+.wy-nav-content .mermaid-fullscreen-btn {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 999px !important;
+  border: 1px solid #d6dce8 !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  color: #334155 !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12) !important;
+  backdrop-filter: blur(10px);
+}
+
+.wy-nav-content .mermaid-fullscreen-btn:hover {
+  transform: translateY(-1px) scale(1.06) !important;
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18) !important;
+}
+
+.wy-nav-content .mermaid-fullscreen-btn.dark-theme {
+  color: #e2e8f0 !important;
+  background: rgba(30, 41, 59, 0.92) !important;
+  border-color: rgba(148, 163, 184, 0.4) !important;
+}
+
+.wy-nav-content pre.mermaid .section0,
+.wy-nav-content pre.mermaid .section1,
+.wy-nav-content pre.mermaid .section2,
+.wy-nav-content pre.mermaid .section3 {
+  opacity: 0.92;
+}
+
+.wy-nav-content pre.mermaid .mindmap-node text {
+  fill: #1f2937 !important;
+  font-weight: 600;
+}
+
+.wy-nav-content pre.mermaid .mindmap-node.section-root .node-bkg,
+.wy-nav-content pre.mermaid .mindmap-node.section-root .background {
+  fill: #ececff !important;
+  stroke: #9370db !important;
+  stroke-width: 1.6px !important;
+}
+
+.wy-nav-content pre.mermaid .mindmap-node.section-0 .node-bkg,
+.wy-nav-content pre.mermaid .mindmap-node.section-0 .background {
+  fill: #ececff !important;
+  stroke: #9370db !important;
+}
+
+.wy-nav-content pre.mermaid .mindmap-node.section-1 .node-bkg,
+.wy-nav-content pre.mermaid .mindmap-node.section-1 .background {
+  fill: #ececff !important;
+  stroke: #9370db !important;
+}
+
+.wy-nav-content pre.mermaid .mindmap-node.section-2 .node-bkg,
+.wy-nav-content pre.mermaid .mindmap-node.section-2 .background {
+  fill: #ececff !important;
+  stroke: #9370db !important;
+}
+
+.wy-nav-content pre.mermaid .mindmap-node.section-3 .node-bkg,
+.wy-nav-content pre.mermaid .mindmap-node.section-3 .background {
+  fill: #ececff !important;
+  stroke: #9370db !important;
+}
+
+.wy-nav-content pre.mermaid .mindmap-node.section-4 .node-bkg,
+.wy-nav-content pre.mermaid .mindmap-node.section-4 .background {
+  fill: #ececff !important;
+  stroke: #9370db !important;
+}

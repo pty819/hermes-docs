@@ -1,0 +1,55 @@
+sequenceDiagram
+    participant Caller as Caller
+    participant Cache as _get_cached_client
+    participant Store as _client_cache
+    participant Router as resolve_provider_client
+    participant EvLoop as Event Loop
+
+    Caller->>Cache: get_cached_client(provider, model, async_mode)
+
+    Note over Cache: Build cache key: provider, async_mode, base_url, api_key, api_mode, runtime_key
+
+    Cache->>Store: Lookup cache entry
+    alt Cache hit
+        Store-->>Cache: client, default_model, cached_loop
+        alt async_mode=True
+            Cache->>EvLoop: Get current event loop
+            alt cached_loop == current_loop and not closed
+                Cache-->>Caller: Return cached client
+            else cached_loop is stale
+                Cache->>Store: _force_close_async_httpx(client)
+                Cache->>Store: Delete stale entry
+                Note over Cache: Continue to create new client
+            end
+        else sync_mode
+            Cache-->>Caller: Return cached client
+        end
+    end
+
+    Note over Cache: Cache miss - create new client
+
+    Cache->>Router: resolve_provider_client(provider, model, ...)
+    Router-->>Cache: client, default_model
+
+    alt client is not None
+        Cache->>Store: Acquire _client_cache_lock
+        alt Cache size less than 64
+            Cache->>Store: Store client, default_model, current_loop
+        else Cache is full
+            Cache->>Store: Evict oldest entry FIFO
+            Cache->>Store: Store new entry
+        end
+        Cache-->>Caller: Return client and model
+    else client is None
+        Cache-->>Caller: Return None, None
+    end
+
+    Note over Caller,EvLoop: Shutdown phase
+
+    rect rgb(255, 230, 230)
+        Note over Cache: shutdown_cached_clients()
+        Cache->>Store: Iterate all entries
+        Cache->>Cache: _force_close_async_httpx(client)
+        Cache->>Cache: client.close() sync clients
+        Cache->>Store: _client_cache.clear()
+    end

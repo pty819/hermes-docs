@@ -1,0 +1,38 @@
+flowchart TD
+    A[自动检测: 文本任务] --> B{主 Provider 已配置?}
+    B -->|是| C[resolve_provider_client 主Provider, 主模型]
+    C --> C1{客户端创建成功?}
+    C1 -->|是| C2[返回主 Provider 客户端]
+    C1 -->|否| D[进入回退链]
+
+    B -->|否| D
+
+    D --> E[_try_openrouter]
+    E --> E1{OPENROUTER_API_KEY 存在?}
+    E1 -->|是| E2[使用 google/gemini-3-flash-preview]
+    E1 -->|否| F[_try_nous]
+
+    F --> F1{Nous 已认证?}
+    F1 -->|是| F2{速率限制?}
+    F2 -->|是| F3[跳过]
+    F2 -->|否| F4{免费用户?}
+    F4 -->|是| F5[使用 mimo-v2-pro]
+    F4 -->|否| F6[使用 gemini-3-flash-preview]
+    F1 -->|否| G[_try_custom_endpoint]
+
+    G --> G1{OPENAI_BASE_URL 或 config 有自定义端点?}
+    G1 -->|是| G2[使用自定义端点 + gpt-4o-mini]
+    G1 -->|否| H[_try_codex]
+
+    H --> H1{Codex Token 有效?}
+    H1 -->|是| H2[使用 gpt-5.2-codex via Responses API]
+    H1 -->|否| I[_resolve_api_key_provider]
+
+    I --> I1[遍历 PROVIDER_REGISTRY]
+    I1 --> I2{找到有 API Key 的 Provider?}
+    I2 -->|是| I3[使用该 Provider 的默认辅助模型]
+    I2 -->|否| J[返回 None, None — 无可用 Provider]
+
+    style A fill:#e1f5fe
+    style C2 fill:#c8e6c9
+    style J fill:#ffcdd2

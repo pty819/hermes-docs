@@ -1,0 +1,64 @@
+flowchart TD
+    A[get_model_context_length] --> B{config context_length set?}
+    B -->|Yes| C[Return explicit config value]
+
+    B -->|No| D{base_url exists?}
+    D -->|Yes| E[Query persistent cache context_length_cache.yaml]
+    E --> E1{Cache hit?}
+    E1 -->|Yes| E2[Return cached value]
+
+    E1 -->|No| F{Custom endpoint and not known provider?}
+    F -->|Yes| G[fetch_endpoint_model_metadata /models API]
+    G --> G1{Found context_length?}
+    G1 -->|Yes| G2[Return endpoint metadata value]
+
+    G1 -->|No| H{Local endpoint?}
+    H -->|Yes| I[_query_local_context_length]
+    I --> I1{Server type?}
+    I1 -->|Ollama| I2["/api/show - num_ctx or GGUF context_length"]
+    I1 -->|LM Studio| I3["/api/v1/models - loaded_instances.config.context_length"]
+    I1 -->|vLLM or generic| I4["/v1/models/model - max_model_len"]
+    I1 -->|llama.cpp| I5["/v1/props - n_ctx"]
+    I2 --> I6[save_context_length to persistent cache]
+    I3 --> I6
+    I4 --> I6
+    I5 --> I6
+    I6 --> I7[Return local query value]
+
+    H -->|No| J[Anthropic /v1/models API query]
+    F -->|No| J
+    J --> J1{Found?}
+    J1 -->|Yes| J2[Return Anthropic API value]
+
+    J1 -->|No| K{Provider-aware query}
+    K --> K1[Nous: _resolve_nous_context_length]
+    K --> K2[models.dev: lookup_models_dev_context]
+    K1 --> K3{Found?}
+    K2 --> K3
+    K3 -->|Yes| K4[Return provider-aware value]
+
+    K3 -->|No| L[OpenRouter metadata cache]
+    L --> L1{Found?}
+    L1 -->|Yes| L2[Return OpenRouter value]
+
+    L1 -->|No| M[DEFAULT_CONTEXT_LENGTHS hardcoded]
+    M --> M1{Model name matches?}
+    M1 -->|Yes| M2[Return hardcoded value]
+
+    M1 -->|No| N{Local endpoint?}
+    N -->|Yes| N1[_query_local_context_length last attempt]
+    N1 --> N2[Return local value or 128K]
+
+    N -->|No| O[Return DEFAULT_FALLBACK_CONTEXT = 128K]
+
+    style A fill:#e1f5fe
+    style C fill:#c8e6c9
+    style E2 fill:#c8e6c9
+    style G2 fill:#c8e6c9
+    style I7 fill:#c8e6c9
+    style J2 fill:#c8e6c9
+    style K4 fill:#c8e6c9
+    style L2 fill:#c8e6c9
+    style M2 fill:#c8e6c9
+    style N2 fill:#fff9c4
+    style O fill:#ffcdd2

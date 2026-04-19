@@ -1,0 +1,17 @@
+flowchart TD
+    A[读取配置值] --> B{环境变量已设置?}
+    B -->|是| C[使用环境变量值 最高优先级]
+
+    B -->|否| D{.env 文件中存在?}
+    D -->|是| E[load_env 返回值]
+
+    D -->|否| F{config.yaml 中存在?}
+    F -->|是| G[load_config → _deep_merge]
+
+    F -->|否| H[使用 DEFAULT_CONFIG 中的默认值]
+
+    style A fill:#e1f5fe
+    style C fill:#ffcdd2
+    style E fill:#fff9c4
+    style G fill:#c8e6c9
+    style H fill:#e0e0e0

@@ -1,0 +1,39 @@
+flowchart TD
+    A[命令执行请求] --> B{Approval 模式?}
+
+    B -->|off / yolo| C[直接执行，无需审批]
+
+    B -->|manual| D[detect_dangerous_command]
+    D --> D1{匹配危险模式?}
+    D1 -->|否| D2[直接执行]
+    D1 -->|是| D3{命令在永久允许列表中?}
+    D3 -->|是| D2
+    D3 -->|否| D4{会话已批准此模式?}
+    D4 -->|是| D2
+    D4 -->|否| D5[提示用户审批]
+
+    D5 --> E{用户选择?}
+    E -->|yes / once| F[本次执行]
+    E -->|session| G[本次执行 + 会话内记住]
+    E -->|always| H[本次执行 + 写入 config.yaml 允许列表]
+    E -->|no / deny| I[拒绝执行]
+
+    B -->|smart| J[detect_dangerous_command]
+    J --> J1{匹配危险模式?}
+    J1 -->|否| J2[直接执行]
+    J1 -->|是| J3{命令在允许列表中?}
+    J3 -->|是| J2
+    J3 -->|否| J4[调用辅助 LLM 评估风险]
+    J4 --> J5{LLM 判定为低风险?}
+    J5 -->|是| J6[自动批准执行]
+    J5 -->|否| J7[提示用户审批 → 同 manual 流程]
+
+    style C fill:#c8e6c9
+    style D2 fill:#c8e6c9
+    style J2 fill:#c8e6c9
+    style F fill:#c8e6c9
+    style G fill:#c8e6c9
+    style H fill:#c8e6c9
+    style J6 fill:#c8e6c9
+    style I fill:#ffcdd2
+    style J7 fill:#fff9c4

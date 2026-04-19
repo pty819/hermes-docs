@@ -1,0 +1,51 @@
+flowchart TD
+    A[resolve_provider_client] --> B{provider 类型?}
+
+    B -->|auto| C[_resolve_auto]
+    C --> C1{主 Provider 可用?}
+    C1 -->|是| C2[使用主 Provider + 主模型]
+    C1 -->|否| C3[遍历回退链]
+    C3 --> C4[OpenRouter]
+    C4 -->|不可用| C5[Nous Portal]
+    C5 -->|不可用| C6[Custom Endpoint]
+    C6 -->|不可用| C7[Codex OAuth]
+    C7 -->|不可用| C8[API-key Providers]
+    C8 -->|不可用| C9[返回 None, None]
+
+    B -->|openrouter| D[_try_openrouter]
+    D --> D1{OPENROUTER_API_KEY 存在?}
+    D1 -->|是| D2[创建 OpenAI 客户端]
+    D1 -->|否| D3[返回 None, None]
+
+    B -->|nous| E[_try_nous]
+    E --> E1{Nous 已认证?}
+    E1 -->|是| E2[检查速率限制]
+    E2 --> E3{免费用户?}
+    E3 -->|是| E4[使用 mimo-v2-pro]
+    E3 -->|否| E5[使用 gemini-3-flash-preview]
+    E1 -->|否| E6[返回 None, None]
+
+    B -->|openai-codex| F[_try_codex]
+    F --> F1{Codex Token 有效?}
+    F1 -->|是| F2[CodexAuxiliaryClient]
+    F1 -->|否| F3[返回 None, None]
+
+    B -->|custom| G[解析自定义端点]
+    G --> G1{base_url 存在?}
+    G1 -->|是| G2[创建 OpenAI 客户端]
+    G1 -->|否| G3[尝试 Custom -> Codex -> API-key]
+
+    B -->|api_key Provider| H[查找 PROVIDER_REGISTRY]
+    H --> H1{auth_type?}
+    H1 -->|api_key| H2[resolve_api_key_provider_credentials]
+    H2 --> H3[创建 OpenAI 客户端]
+    H1 -->|oauth_*| H4[路由到特定 try 函数]
+    H1 -->|external_process| H5[解析外部进程凭证]
+
+    style A fill:#e1f5fe
+    style C fill:#fff3e0
+    style D fill:#e8f5e9
+    style E fill:#fce4ec
+    style F fill:#f3e5f5
+    style G fill:#e0f2f1
+    style H fill:#fff8e1

@@ -1,0 +1,38 @@
+flowchart TD
+    A[加载上下文文件: AGENTS.md, .cursorrules, SOUL.md] --> B[_scan_context_content]
+
+    B --> C[检查不可见 Unicode 字符]
+    C --> C1{包含 U+200B, U+FEFF 等?}
+    C1 -->|是| C2[记录: invisible unicode U+XXXX]
+
+    B --> D[检查威胁模式]
+    D --> D1[10 个正则表达式模式]
+    D1 --> D2["ignore (previous|all|above|prior) instructions"]
+    D1 --> D3["do not tell the user"]
+    D1 --> D4["system prompt override"]
+    D1 --> D5["disregard (your|all|any) (instructions|rules)"]
+    D1 --> D6["act as if you have no restrictions"]
+    D1 --> D7["HTML 注释注入 <!-- ... -->"]
+    D1 --> D8["隐藏 div display:none"]
+    D1 --> D9["translate into ... and execute"]
+    D1 --> D10["curl ... $KEY/$TOKEN/$SECRET"]
+    D1 --> D11["cat ... .env/credentials/.netrc"]
+
+    C2 --> E{发现任何威胁?}
+    D2 --> E
+    D3 --> E
+    D4 --> E
+    D5 --> E
+    D6 --> E
+    D7 --> E
+    D8 --> E
+    D9 --> E
+    D10 --> E
+    D11 --> E
+
+    E -->|是| F["返回: [BLOCKED: filename contained potential prompt injection (...). Content not loaded.]"]
+    E -->|否| G[返回原始内容，不做修改]
+
+    style A fill:#e1f5fe
+    style F fill:#ffcdd2
+    style G fill:#c8e6c9
