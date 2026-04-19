@@ -11,6 +11,7 @@ Sync documentation from the upstream hermes-agent source repository, analyze cha
 
 - Source repo at `/Users/liyifan/hermes-agent` (or set `HERMES_SOURCE_REPO`)
 - This repo at `/Users/liyifan/hermes-docs`
+- uv venv at `.venv/` (create with `uv venv .venv --python 3.13 && uv pip install --python .venv/bin/python sphinx sphinx-rtd-theme sphinxcontrib-mermaid`)
 
 ## Steps
 
@@ -41,9 +42,14 @@ Rules:
 
 ### Step 4: Verify build
 
+Use the uv virtual environment (not system Python):
+
 ```bash
-pip install sphinx==8.2.3 sphinx-rtd-theme==3.0.2 sphinxcontrib-mermaid==1.0.0
-sphinx-build -b html . _build/html
+# If .venv doesn't exist yet:
+# uv venv .venv --python 3.13
+# uv pip install --python .venv/bin/python sphinx sphinx-rtd-theme sphinxcontrib-mermaid
+
+.venv/bin/python -m sphinx -b html . _build/html
 ```
 
 Check for warnings or errors. Fix any issues before committing.
