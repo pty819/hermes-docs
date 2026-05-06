@@ -9,7 +9,7 @@ MCP 集成：Model Context Protocol 的生产级实现
    :local:
 
 *****************
-1. MCP 协议概述
+MCP 协议概述
 *****************
 
 Model Context Protocol（MCP）是由 Anthropic 提出的一种开放协议，旨在标准化大语言模型（LLM）与外部工具和数据源之间的交互方式。在传统的 Agent 架构中，每增加一个外部工具就需要硬编码集成逻辑，这不仅维护成本高昂，而且使得 Agent 的能力受到代码库的束缚。MCP 的核心思想是将"工具提供"与"工具消费"彻底解耦——任何实现了 MCP 协议的服务器都可以向支持 MCP 的客户端暴露工具、资源和提示，而客户端不需要了解服务器的内部实现。
@@ -62,7 +62,7 @@ Hermes Agent 的 MCP 集成实现了上述所有能力，并在连接管理、�
        style LLM fill:#ede9fe,stroke:#a78bfa,color:#5b21b6
 
 ***************
-2. 传输层架构
+传输层架构
 ***************
 
 MCP 协议定义了两种传输方式，Hermes Agent 均予以支持。选择哪种传输方式取决于 MCP 服务器的部署形态。
@@ -136,7 +136,7 @@ HTTP 传输使用 MCP SDK 的 ``streamable_http_client()`` （新版 API）或 `
        style SESSION fill:#dcfce7,stroke:#34d399,color:#166534
 
 ******************
-3. 连接生命周期
+连接生命周期
 ******************
 
 Hermes Agent 中的每个 MCP 服务器由一个 ``MCPServerTask`` 实例管理。该类封装了从连接、发现、服务到断开的完整生命周期，运行在专用的后台事件循环上。
@@ -221,7 +221,7 @@ MCPServerTask 的核心状态
        note right of Reconnecting: 不计入重试计数
 
 ******************
-4. 工具注册格式
+工具注册格式
 ******************
 
 MCP 服务器暴露的工具在注册到 Hermes Agent 的工具注册表时，会经过严格的命名转换和格式规范化。
@@ -314,7 +314,7 @@ MCP 工具的 ``inputSchema`` 通过 ``_normalize_mcp_input_schema()`` 函数规
        Note over Reg: 注册完成：2 个工具
 
 *************************
-5. OAuth 2.1 PKCE 认证
+OAuth 2.1 PKCE 认证
 *************************
 
 对于需要用户认证的远程 MCP 服务器，Hermes Agent 实现了完整的 OAuth 2.1 Authorization Code Flow with PKCE（Proof Key for Code Exchange）。这一实现覆盖了从浏览器授权到令牌持久化的全流程，并解决了跨进程令牌同步和 401 风暴等生产级问题。
@@ -415,7 +415,7 @@ HermesTokenStorage
        Note over Mgr: 后续：磁盘 mtime 检测<br/>跨进程令牌刷新
 
 *******************
-6. 动态工具发现
+动态工具发现
 *******************
 
 MCP 协议支持服务器在运行时通知客户端工具列表发生变化（``notifications/tools/list_changed``）。Hermes Agent 通过 ``MCPServerTask._make_message_handler()`` 和 ``_refresh_tools()`` 实现了动态工具发现。
@@ -475,7 +475,7 @@ MCP 协议支持服务器在运行时通知客户端工具列表发生变化（`
            removed = old_tool_names - new_tool_names
 
 ***************
-7. 熔断器模式
+熔断器模式
 ***************
 
 在分布式系统中，远程服务不可用是常态。如果 MCP 服务器持续失败而 Agent 不断重试，会造成"90 次迭代空转"问题（Issue #10447）。为此，Hermes Agent 为每个 MCP 服务器实现了熔断器模式。
@@ -535,7 +535,7 @@ MCP 协议支持服务器在运行时通知客户端工具列表发生变化（`
        style INCR fill:#fef3c7,stroke:#f59e0b,color:#92400e
 
 ******************
-8. Sampling 支持
+Sampling 支持
 ******************
 
 MCP 协议的 Sampling 特性允许服务器反向请求 LLM 生成文本，实现更复杂的交互模式（如 Agent-in-Agent）。Hermes Agent 通过 ``SamplingHandler`` 类实现了这一特性。
@@ -628,7 +628,7 @@ LLM 调用通过 ``agent.auxiliary_client.call_llm()`` 完成，并使用 ``asyn
        SDK-->>MCP: 返回结果
 
 *************
-9. 安全机制
+安全机制
 *************
 
 MCP 集成涉及执行外部代码和加载外部数据，安全是首要关注点。Hermes Agent 实现了多层安全防御。
@@ -707,7 +707,7 @@ OSV 恶意软件检查
        raise ValueError(f"MCP server '{self.name}': {malware_error}")
 
 *****************************
-10. 与内置工具的冲突保护
+与内置工具的冲突保护
 *****************************
 
 MCP 工具的注册名可能与 Hermes Agent 的内置工具发生冲突（例如，一个 MCP 服务器暴露了名为 ``read_file`` 的工具，而 Hermes 自身已有此工具）。为防止 MCP 工具意外覆盖内置功能，注册时会进行冲突检测。

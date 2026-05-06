@@ -9,7 +9,7 @@ Hermes Agent 作为一个多模态 AI Agent 框架，其核心设计理念之一
 本章将从设计动机、架构实现、Provider 注册表、客户端适配器、缓存机制、错误恢复等多个维度，深入剖析 Hermes 的多 Provider 统一接入层。
 
 ****************************
-1. 为什么需要多 Provider
+为什么需要多 Provider
 ****************************
 
 单一 Provider 依赖是生产级 Agent 系统的反模式。Hermes 的设计从一开始就假设：**没有哪个 Provider 是永远可用的** 。
@@ -60,7 +60,7 @@ Hermes 的自动检测链（auto-detection chain）确保当首选 Provider 不�
 Hermes 通过 **任务类型路由** （text vs vision）和 **模型能力查询** （models.dev 注册表）来智能匹配任务与 Provider。
 
 ****************************
-2. Provider 注册表
+Provider 注册表
 ****************************
 
 ``hermes_cli/auth.py`` 定义了 ``PROVIDER_REGISTRY``——一个全局的 Provider 配置注册表。每个条目是一个 ``ProviderConfig`` 数据类::
@@ -159,7 +159,7 @@ ProviderProfile 抽象
 .. mermaid:: ../diagrams/provider-resolution-flow.mmd
 
 ****************************
-3. 辅助客户端路由
+辅助客户端路由
 ****************************
 
 ``resolve_provider_client()`` 是 Provider 路由的核心工厂函数，接受一个 Provider 标识符和可选的模型名称，返回一个配置好的客户端实例::
@@ -198,7 +198,7 @@ Provider 名称别名系统 ``_PROVIDER_ALIASES`` 支持 20+ 个常见别名映�
     }
 
 ****************************
-4. 文本/视觉任务的优先级链
+文本/视觉任务的优先级链
 ****************************
 
 Hermes 对文本任务和视觉任务采用不同的自动检测链。
@@ -241,7 +241,7 @@ Hermes 对文本任务和视觉任务采用不同的自动检测链。
 .. mermaid:: ../diagrams/auto-detection-chain.mmd
 
 ****************************
-5. 客户端适配器模式
+客户端适配器模式
 ****************************
 
 Hermes 的辅助客户端使用 OpenAI SDK 的 ``chat.completions.create()`` 接口作为统一抽象。然而并非所有 Provider 都原生支持这一接口。适配器模式通过 **接口转换** 解决这一不一致性。
@@ -291,7 +291,7 @@ Anthropic 的 Messages API 使用与 OpenAI 不同的请求/响应格式。``Ant
             return await asyncio.to_thread(self._sync.create, **kwargs)
 
 ****************************
-6. 客户端缓存架构
+客户端缓存架构
 ****************************
 
 ``_get_cached_client()`` 实现了一个线程安全的客户端缓存，避免每次 LLM 调用都重新创建客户端。
@@ -339,7 +339,7 @@ Anthropic 的 Messages API 使用与 OpenAI 不同的请求/响应格式。``Ant
 - **每轮清理** ：``cleanup_stale_async_clients()`` 在每个 Agent 轮次后清理事件循环已关闭的异步客户端
 
 ****************************
-7. 支付错误自动回退
+支付错误自动回退
 ****************************
 
 当用户的 Provider 余额耗尽或支付失败时，Hermes 会自动尝试其他可用的 Provider，而不是直接向用户报告错误。
@@ -379,7 +379,7 @@ Anthropic 的 Messages API 使用与 OpenAI 不同的请求/响应格式。``Ant
 关键设计决策：**只有 "auto" 模式（用户未明确指定 Provider）才触发回退** 。如果用户明确配置了某个 Provider 并遇到支付错误，系统会直接报错而不是静默切换——避免用户误以为仍在使用付费 Provider 而实际上切换到了免费但质量较低的 Provider。
 
 ****************************
-8. 模型特定策略
+模型特定策略
 ****************************
 
 不同模型有不同的行为契约，Hermes 通过一系列模型特定策略来适配这些差异。
@@ -492,7 +492,7 @@ URL 到 Provider 推断
 .. mermaid:: ../diagrams/context-length-resolution.mmd
 
 ****************************
-10. Token 估算
+Token 估算
 ****************************
 
 Hermes 在多个环节需要进行 Token 估算，例如上下文压缩触发检查、预飞行（pre-flight）上下文窗口检查等。
@@ -542,7 +542,7 @@ estimate_request_tokens_rough
 从 128K 开始，如果请求超出上下文限制，逐步降低到下一个阶梯，直到找到可用的长度。这种方式避免了过度压缩或浪费上下文空间。
 
 ****************************
-11. models.dev 注册表
+models.dev 注册表
 ****************************
 
 ``agent/models_dev.py`` 集成了 `models.dev <https://models.dev>`_ ——一个社区维护的 LLM 模型数据库，覆盖 4000+ 模型和 109+ Provider。
@@ -611,7 +611,7 @@ Agent 模型过滤
     )
 
 ****************************
-12. 错误消息解析
+错误消息解析
 ****************************
 
 当 API 调用因上下文限制失败时，Hermes 能从错误消息中提取关键信息，用于动态调整上下文窗口。
@@ -651,7 +651,7 @@ Anthropic 的错误消息格式为::
 该函数提取 ``available_tokens`` 值，使得 Hermes 可以在不改变 ``context_length`` 的前提下，仅调整 ``max_tokens`` 参数重试请求。
 
 ****************************
-13. 传输抽象层
+传输抽象层
 ****************************
 
 Hermes 引入了 ``agent/transports/`` 包，将 LLM 调用的传输细节从辅助客户端和主循环中解耦。
