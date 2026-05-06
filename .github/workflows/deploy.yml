@@ -22,14 +22,14 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
       - name: Install dependencies
         run: |
           pip install \
-            sphinx==8.2.3 \
-            sphinx-rtd-theme==3.0.2 \
-            sphinxcontrib-mermaid==1.0.0
+            sphinx==9.1.0 \
+            sphinx-rtd-theme==3.1.0 \
+            sphinxcontrib-mermaid==2.0.2
 
       - name: Build Sphinx
         run: sphinx-build -b html . _build/html
