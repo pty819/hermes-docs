@@ -12,6 +12,8 @@ Hermes Agent 的核心循环 ``run_agent.py`` 有 12,084 行。
 和"技术债务"五个维度来组织分析。
 
 .. mermaid::
+   :name: lessons-mindmap
+   :caption: Hermes 模式目录总览
 
    mindmap
      root((Hermes<br/>模式目录))
@@ -65,8 +67,10 @@ LLM 提供商，每个提供商的 API 格式、认证方式、流式协议都�
 ``"codex_responses"``）。主循环根据 ``api_mode`` 选择不同的调用路径。
 
 .. mermaid::
+   :name: strategy-pattern-api
+   :caption: Strategy Pattern：API 路由选择
 
-   graph TD
+   flowchart TD
        A["run_conversation()"] --> B{"api_mode?"}
        B -->|"openai_chat"| C["OpenAI SDK<br/>chat.completions.create()"]
        B -->|"anthropic_messages"| D["Anthropic SDK<br/>messages.create()"]
@@ -330,8 +334,10 @@ web_search）使用 httpx 的异步客户端，但主循环是同步的。
 **Hermes 的做法** （``tools/budget_config.py``）：三层预算控制。
 
 .. mermaid::
+   :name: three-layer-budget
+   :caption: 三层结果预算系统
 
-   graph TB
+   flowchart TB
        A["工具返回结果"] --> B{"Layer 1: 单工具阈值<br/>default 100K chars"}
        B -->|"超过"| C["持久化到磁盘<br/>替换为 preview (1.5K chars)"]
        B -->|"未超过"| D["保留在消息中"]
@@ -500,8 +506,10 @@ Anthropic 允许最多 4 个缓存断点。Hermes 将它们分配为：
 也避免了将真正的余额耗尽当作临时问题反复重试。
 
 .. mermaid::
+   :name: error-classification-flow
+   :caption: 11 类错误分类管线
 
-   graph TD
+   flowchart TD
        A["API 调用失败"] --> B{"提供商特定模式?"}
        B -->|是| C["thinking_signature / long_context_tier"]
        B -->|否| D{"有 HTTP 状态码?"}
@@ -514,7 +522,7 @@ Anthropic 允许最多 4 个缓存断点。Hermes 将它们分配为：
        I -->|无匹配| K{"传输错误?"}
        K -->|是| L["timeout / context_overflow"]
        K -->|否| M["unknown — 可重试"]
-   
+
        G --> N["ClassifiedError<br/>+ 恢复策略提示"]
        C --> N
        H --> N

@@ -10,8 +10,13 @@ flowchart TD
 
     F -->|否| H[使用 DEFAULT_CONFIG 中的默认值]
 
-    style A fill:#e1f5fe
-    style C fill:#ffcdd2
-    style E fill:#fff9c4
-    style G fill:#c8e6c9
-    style H fill:#e0e0e0
+    classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+    classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+    class A start
+    class C fail
+    class E warn
+    class G success
+    class H info

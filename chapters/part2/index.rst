@@ -6,11 +6,11 @@
 从"它如何运转"到"我们能学到什么"
 ------------------------------------
 
-在第一部分中，我们花了十三个章节的篇幅，像外科医生解剖标本一样，
+在第一部分中，我们花了十四个章节的篇幅，像外科医生解剖标本一样，
 一层一层地拆解了 Hermes Agent 的每一个子系统：从核心的
 observe-think-act 循环，到工具注册与调度，到上下文压缩，到
-会话持久化，到网关 RPC，到插件和技能系统。我们已经看到了
-每一行关键代码是如何工作的。
+会话持久化，到网关 RPC，到多 Profile Kanban 协作，到插件和技能系统。
+我们已经看到了每一行关键代码是如何工作的。
 
 但理解一个系统如何运转只是工程学习的起点。
 
@@ -25,8 +25,14 @@ observe-think-act 循环，到工具注册与调度，到上下文压缩，到
 我们能提炼出哪些适用于任何 Agent 系统的工程原则"。
 
 .. mermaid::
+   :name: part2-learning-path
+   :caption: 第二部分学习路径
 
-   graph LR
+   flowchart LR
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
        A["第一部分<br/>架构分析"] --> B{"抽象与提炼"}
        B --> C["工程教训<br/>模式总结"]
        B --> D["实践指南<br/>构建你自己的 Agent"]
@@ -36,6 +42,10 @@ observe-think-act 循环，到工具注册与调度，到上下文压缩，到
        D --> H["最小可行 Agent"]
        D --> I["架构选型决策"]
        D --> J["完整示例架构"]
+
+       class A start
+       class C,D success
+       class E,F,G,H,I,J info
 
 论文与生产系统之间的鸿沟
 --------------------------
@@ -128,9 +138,15 @@ Prompt 缓存策略（system_and_3 方案）、并行工具执行策略、
 通常能发现改进空间。
 
 .. mermaid::
+   :name: part1-to-part2-mapping
+   :caption: 第一部分与第二部分的对应关系
 
-   graph TB
-       subgraph "第一部分：架构分析"
+   flowchart TB
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+
+       subgraph P1["第一部分：架构分析"]
            A1["Agent Loop"]
            A2["工具系统"]
            A3["Prompt 管线"]
@@ -141,7 +157,7 @@ Prompt 缓存策略（system_and_3 方案）、并行工具执行策略、
            A8["模型路由"]
            A9["安全 / 配置"]
        end
-       subgraph "第二部分：经验与实战"
+       subgraph P2["第二部分：经验与实战"]
            B1["架构模式总结"]
            B2["性能优化策略"]
            B3["错误处理哲学"]
@@ -165,6 +181,10 @@ Prompt 缓存策略（system_and_3 方案）、并行工具执行策略、
        B3 --> B8
        B4 --> B8
        B5 --> B7
+
+       class A1,A2,A3,A4,A5,A6,A7,A8,A9 start
+       class B6,B7,B8 success
+       class B1,B2,B3,B4,B5 warn
 
 一个阅读建议：不要把第二部分当作独立的指南来读。
 它的价值在于与第一部分的对照。当你读到"Self-Registration Pattern"

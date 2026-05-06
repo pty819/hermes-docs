@@ -301,6 +301,7 @@ CommandDef 数据类
    :caption: Slash 命令解析流程
 
    sequenceDiagram
+       autonumber
        participant User as 用户
        participant PT as prompt_toolkit
        participant CR as COMMAND_REGISTRY

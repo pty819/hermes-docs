@@ -277,6 +277,7 @@ ToolRegistry 实现了一个优雅的快照机制，让我们看看：
 .. mermaid::
 
     sequenceDiagram
+        autonumber
         participant T as Tool Module
         participant R as ToolRegistry
         participant L as _lock
@@ -577,6 +578,12 @@ AST 扫描的实现
 .. mermaid::
 
     flowchart TD
+        classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+        classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+        classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+        classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+        classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
         Start([开始解析]) --> CheckName{检查工具集名称}
         CheckName -->|all/*| AllTools[解析所有工具集]
         CheckName -->|其他名称| CheckVisited{是否已访问?}
@@ -601,6 +608,12 @@ AST 扫描的实现
             B --> D
             C --> D
         end
+
+        class Start start
+        class ReturnResult success
+        class ReturnEmpty fail
+        class CheckName,CheckVisited,AllTools,AddVisited,GetDef,CollectDirect,ProcessIncludes,Recurse,Merge info
+        class A,B,C,D info
 
 这个流程图展示了工具集解析的完整过程，包括特殊别名处理、循环检测、递归解析和结果合并。
 
@@ -953,6 +966,12 @@ hermes-agent 有一个灵活的钩子系统，允许插件观察和干预工具�
 .. mermaid::
 
    flowchart TD
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
        Start([Tool call request]) --> Coerce[coerce_tool_args type conversion]
        Coerce --> CheckAgent{Agent Loop tool?}
        CheckAgent -->|Yes| ReturnError[Return error: must be handled by agent loop]
@@ -972,6 +991,11 @@ hermes-agent 有一个灵活的钩子系统，允许插件观察和干预工具�
        ReturnError --> End([End])
        ReturnBlocked --> End
        ReturnResult --> End
+
+       class Start start
+       class ReturnResult success
+       class ReturnError,ReturnBlocked fail
+       class Coerce,CheckAgent,CheckPreHook,FirePreHook,CheckRead,NotifyRead,Dispatch,CheckAsync,RunAsync,CallSync,FirePostHook,End info
 
 这个流程图展示了从接收到工具调用请求到返回结果的完整处理流程，包括类型转换、钩子检查、调度决策和异常处理。
 
@@ -1182,6 +1206,12 @@ hermes-agent 对工具结果采用三层防御策略：
 .. mermaid::
 
     flowchart TD
+        classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+        classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+        classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+        classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+        classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
         Start([工具调用请求]) --> Coerce[参数强制转换]
         Coerce --> Guardrails[Tool Guardrails 安全检查]
         Guardrails --> CheckResult{安全检查通过?}
@@ -1194,6 +1224,12 @@ hermes-agent 对工具结果采用三层防御策略：
         PostHook --> ReturnResult[返回结果]
         ReturnError --> End([结束])
         ReturnResult --> End
+
+        class Start start
+        class ReturnResult success
+        class ReturnError fail
+        class Guardrails warn
+        class Coerce,CheckResult,PreHook,Dispatch,FileSafety,Execute,PostHook,End info
 
 这个流程图展示了护栏系统在整体调度管道中的位置。注意它有两层防护：
 
@@ -1317,6 +1353,7 @@ hermes-agent 的解决方案是：使用 Python 原生的解析器进行增量�
 .. mermaid::
 
     sequenceDiagram
+        autonumber
         participant Agent as LLM Agent
         participant Dispatch as 调度器
         participant FileTool as write_file / patch
@@ -1414,6 +1451,12 @@ hermes-agent 将工具分为三类：
 .. mermaid::
 
     flowchart TD
+        classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+        classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+        classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+        classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+        classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
         Start([一批工具调用]) --> CheckNever{包含NEVER_PARALLEL工具?}
         CheckNever -->|是| NoParallel[顺序执行]
         CheckNever -->|否| CheckPathScoped{包含PATH_SCOPED工具?}
@@ -1424,6 +1467,11 @@ hermes-agent 将工具分为三类：
         CheckConflict -->|否| YesParallel
         YesParallel --> End([执行])
         NoParallel --> End
+
+        class Start start
+        class YesParallel success
+        class NoParallel warn
+        class CheckNever,CheckPathScoped,CollectPaths,CheckConflict,End info
 
 这个流程图展示了决定一批工具调用是否可以并行执行的决策过程。
 
@@ -1521,6 +1569,65 @@ _run_async()：统一的桥接
 第一种场景特别值得注意。当已经有一个活跃的事件循环时，我们不能直接在那个循环中运行另一个 ``run_until_complete()`` ，这会导致嵌套事件循环错误。解决方案是在一个新线程中运行，这样新线程可以有自己的事件循环。
 
 这个函数是 hermes-agent 中同步→异步桥接的单一真实来源，所有异步工具都通过它运行。这确保了一致性，避免了重复代码。
+
+扩展工具集
+------------
+
+随着 Hermes 的持续演进，工具系统不断扩展以覆盖更多场景。
+以下是截至本书编写时的主要扩展工具：
+
+代码执行工具（PTC）
+~~~~~~~~~~~~~~~~~~~~
+
+``tools/code_execution_tool.py`` 实现了 **Programmatic Tool Calling（PTC）**——
+允许 LLM 编写 Python 脚本，脚本内部通过 RPC 调用 Hermes 的其他工具。
+这是一个重大的架构创新：
+
+- LLM 不再受限于单次工具调用的原子操作，而是可以编写多步骤的脚本
+- 脚本通过 Unix Domain Socket（UDS，本地场景）或文件-based RPC（远程场景）
+  与 Hermes 通信
+- 支持条件逻辑、循环、错误处理——将工具调用从"单步"升级为"编程"
+
+Mixture-of-Agents 工具
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+``tools/mixture_of_agents_tool.py`` 实现了多模型协作推理。
+对于复杂的推理任务，它将同一问题发送给多个模型，然后综合各模型的回答
+得出更可靠的结论。
+
+环境执行后端
+~~~~~~~~~~~~~
+
+``tools/environments/`` 子目录提供了多种隔离执行环境：
+
+- **Docker** （``docker.py``）：容器化执行
+- **SSH** （``ssh.py``）：远程机器执行
+- **Modal** （``modal.py``）：云端 Serverless 执行
+- **Singularity** （``singularity.py``）：HPC 容器执行
+- **Daytona** （``daytona.py``）：开发环境管理
+- **Local** （``local.py``）：本地执行（默认）
+
+浏览器工具
+~~~~~~~~~~~
+
+浏览器工具通过 ``tools/browser_providers/`` 子目录支持多种后端：
+
+- **BrowserBase** （``browserbase.py``）：云端浏览器
+- **Firecrawl** （``firecrawl.py``）：网页抓取
+- **Browser Use** （``browser_use.py``）：本地浏览器自动化
+- **Camofox** （``browser_camofox.py``）：反检测浏览器后端
+
+其他扩展工具
+~~~~~~~~~~~~~
+
+- ``clarify_tool.py``：当任务描述模糊时，Agent 可以向用户请求澄清
+- ``todo_tool.py``：任务管理工具，支持创建、更新、完成待办事项
+- ``send_message_tool.py``：跨平台消息发送
+- ``image_generation_tool.py``：图像生成
+- ``checkpoint_manager.py``：代码检查点管理
+- ``homeassistant_tool.py``：Home Assistant 智能家居集成
+- ``managed_tool_gateway.py``：托管工具网关
+- ``rl_training_tool.py``：强化学习训练工具
 
 总结
 ------

@@ -247,6 +247,8 @@ Hermes 会在 ``plugins/context_engine/<name>/`` 目录下查找对应的引擎�
 完整的触发决策流程如下：
 
 .. mermaid::
+   :name: fig-compression-trigger
+   :caption: 上下文压缩触发决策流程
 
    flowchart TD
        A["API 响应返回<br/>update_from_response()"] --> B{"prompt_tokens >=<br/>threshold_tokens?"}
@@ -265,6 +267,19 @@ Hermes 会在 ``plugins/context_engine/<name>/`` 目录下查找对应的引擎�
        L -- 否 --> N["_ineffective_count = 0"]
        M --> Z
        N --> Z
+
+       class A start
+       class Z success
+       class D warn
+       class E info
+       class F,G,H,I,J info
+       class M,N info
+
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
 
 Phase 1: 工具结果修剪（_prune_old_tool_results）
 ---------------------------------------------------
@@ -406,6 +421,8 @@ MD5 哈希的前 12 个字符作为指纹：
 完整的工具结果修剪流程：
 
 .. mermaid::
+   :name: fig-tool-result-pruning
+   :caption: 工具结果修剪流程（Phase 1）
 
    flowchart TD
        A["输入: 消息列表 +<br/>尾部保护预算"] --> B["构建索引:<br/>tool_call_id → (name, args)"]
@@ -418,6 +435,16 @@ MD5 哈希的前 12 个字符作为指纹：
        G -- 否 --> H["返回 (修剪后的列表, 修剪计数)"]
        G -- 是 --> I["Pass 3: JSON 截断<br/>(保持有效性)"]
        I --> H
+
+       class A start
+       class H success
+       class B,C,D,F,I info
+
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
 
 Phase 2: 边界确定
 -------------------
@@ -432,6 +459,8 @@ Phase 2: 边界确定
 3. **尾部（Tail）** ：最近的对话，直接保留
 
 .. mermaid::
+   :name: fig-three-section-split
+   :caption: 消息列表三段式分割示意图
 
    flowchart LR
        subgraph Head["头部 (直接保留)"]
@@ -453,6 +482,16 @@ Phase 2: 边界确定
            T3["最新助手回复"]
        end
        Head --> Middle --> Tail
+
+       class H1,H2,H3 start
+       class M1,M2,M3 warn
+       class T1,T2,T3 success
+
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
 
 头部保护：protect_first_n=3
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -546,6 +585,8 @@ LLM 摘要器会将它标记为"Pending User Asks"，但摘要前缀告诉下一
 边界对齐流程：
 
 .. mermaid::
+   :name: fig-boundary-alignment
+   :caption: 压缩边界对齐流程（Phase 2）
 
    flowchart TD
        A["protect_first_n = 3<br/>初始 compress_start"] --> B["前向对齐<br/>跳过工具结果"]
@@ -558,6 +599,17 @@ LLM 摘要器会将它标记为"Pending User Asks"，但摘要前缀告诉下一
        F --> H{"compress_start<br/>>= compress_end?"}
        H -- 是 --> I["无法压缩<br/>返回原始消息"]
        H -- 否 --> J["进入 Phase 3"]
+
+       class A start
+       class J success
+       class I fail
+       class B,C,D,F,G info
+
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
 
 Phase 3: LLM 摘要生成
 ------------------------
@@ -703,23 +755,26 @@ Agent 可能会重复已完成的工作，或者跳过未完成的任务。
 摘要生成的时序图：
 
 .. mermaid::
+   :name: fig-summary-generation
+   :caption: Phase 3 LLM 摘要生成时序图
 
    sequenceDiagram
+       autonumber
        participant C as ContextCompressor
        participant S as 序列化器
        participant LLM as 摘要 LLM
-   
+
        C->>C: _compute_summary_budget()
        C->>S: _serialize_for_summary(turns)
        S->>S: 逐条截断 (6000 chars/msg)
        S-->>C: 序列化文本
-   
+
        alt 首次压缩
            C->>LLM: 首次摘要提示词<br/>+ 序列化文本
        else 迭代更新
            C->>LLM: 更新提示词<br/>+ 之前的摘要<br/>+ 新的序列化文本
        end
-   
+
        alt LLM 成功
            LLM-->>C: 结构化摘要文本
            C->>C: _with_summary_prefix()

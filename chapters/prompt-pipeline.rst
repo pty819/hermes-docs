@@ -206,10 +206,10 @@ SOUL.md 的设计理念是"用户即设计师"——用户可以完全控制 Age
 
 不同的消息平台有不同的特性：有的支持 Markdown，有的不支持；有的可以发送文件，有的只能发文本。hermes-agent 通过平台适配层来处理这些差异。
 
-14 个平台提示
+13 个平台提示
 ~~~~~~~~~~~~~~~
 
-hermes-agent 目前支持 14 个平台的提示适配。让我们看看这些平台：
+hermes-agent 目前支持 13 个平台的提示适配。让我们看看这些平台：
 
 .. code-block:: python
 
@@ -717,6 +717,7 @@ LRU 内存缓存使用 ``OrderedDict`` 实现，这是 Python 中实现 LRU 缓�
 .. mermaid::
 
     sequenceDiagram
+        autonumber
         participant Caller as build_skills_system_prompt()
         participant LRU as LRU 内存缓存
         participant Disk as 磁盘快照
@@ -1176,7 +1177,7 @@ Anthropic 缓存策略流程图
 总结
 ------
 
-在本章中，我们深入探讨了 hermes-agent 的提示工程管线，从 9 槽位管道设计、Agent 身份定义、14 个平台适配、环境感知、记忆与搜索指导、模型特定规范、双层缓存技能索引、上下文文件优先级到提示注入防御和 Anthropic Prompt 缓存。
+在本章中，我们深入探讨了 hermes-agent 的提示工程管线，从 13 段式管道设计、Agent 身份定义、13 个平台适配、环境感知、记忆与搜索指导、模型特定规范、双层缓存技能索引、上下文文件优先级到提示注入防御和 Anthropic Prompt 缓存。
 
 这个系统的设计体现了几个重要原则：
 

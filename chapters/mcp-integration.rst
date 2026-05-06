@@ -29,8 +29,10 @@ MCP 协议的核心能力包括：
 Hermes Agent 的 MCP 集成实现了上述所有能力，并在连接管理、认证、安全防护和容错机制方面做了大量生产级强化。
 
 .. mermaid::
+   :name: mcp-ecosystem
+   :caption: MCP 生态系统概览
 
-   graph TB
+   flowchart TB
        subgraph "MCP 生态系统"
            LLM["LLM (Claude / GPT / ...)"]
            AGENT["Hermes Agent<br/>(MCP Client)"]
@@ -57,9 +59,15 @@ Hermes Agent 的 MCP 集成实现了上述所有能力，并在连接管理、�
        PROXY -->|"tool_result"| AGENT
        AGENT -->|"response"| LLM
 
-       style AGENT fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
-       style PROXY fill:#e0f2fe,stroke:#38bdf8,color:#0f4c75
-       style LLM fill:#ede9fe,stroke:#a78bfa,color:#5b21b6
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
+       class AGENT start
+       class PROXY info
+       class LLM warn
 
 ***************
 传输层架构
@@ -105,8 +113,10 @@ HTTP 传输使用 MCP SDK 的 ``streamable_http_client()`` （新版 API）或 `
 如果配置中同时包含 ``url`` 和 ``command`` ，HTTP 传输优先，Agent 会输出一条警告日志。
 
 .. mermaid::
+   :name: transport-selection
+   :caption: 传输方式选择与流程
 
-   graph LR
+   flowchart LR
        subgraph "传输方式选择"
            CONFIG["config.yaml"]
            CONFIG -->|"有 command?"| STDIO["Stdio 传输"]
@@ -132,8 +142,14 @@ HTTP 传输使用 MCP SDK 的 ``streamable_http_client()`` （新版 API）或 `
        STREAM --> SESSION
        SESSION --> TOOLS["list_tools()"]
 
-       style CONFIG fill:#fef3c7,stroke:#f59e0b,color:#92400e
-       style SESSION fill:#dcfce7,stroke:#34d399,color:#166534
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
+       class CONFIG warn
+       class SESSION success
 
 ******************
 连接生命周期
@@ -191,6 +207,8 @@ MCPServerTask 的核心状态
 - OAuth 重连不计入重试计数——这是一种恢复行为而非失败。
 
 .. mermaid::
+   :name: connection-lifecycle
+   :caption: MCPServerTask 连接生命周期
 
    stateDiagram-v2
        [*] --> Initializing: start(config)
@@ -287,8 +305,11 @@ MCP 工具的 ``inputSchema`` 通过 ``_normalize_mcp_input_schema()`` 函数规
 当 ``include`` 和 ``exclude`` 同时存在时，``include`` 优先。
 
 .. mermaid::
+   :name: tool-registration-seq
+   :caption: MCP 工具注册序列图
 
    sequenceDiagram
+       autonumber
        participant SDK as MCP SDK
        participant Task as MCPServerTask
        participant Reg as 工具注册表
@@ -370,8 +391,11 @@ HermesTokenStorage
 - 恢复流程首先检查磁盘令牌是否已更新，然后检查 SDK 是否能就地刷新。
 
 .. mermaid::
+   :name: oauth-pkce-seq
+   :caption: OAuth 2.1 PKCE 认证序列图
 
    sequenceDiagram
+       autonumber
        participant User as 用户浏览器
        participant CLI as Hermes CLI
        participant Mgr as MCPOAuthManager
@@ -506,6 +530,8 @@ MCP 协议支持服务器在运行时通知客户端工具列表发生变化（`
 当错误消息中明确包含"不要重试"的指令时，LLM 通常会停止调用该工具并转而使用替代方案或向用户求助。这一简单的策略有效避免了无意义的重试循环。
 
 .. mermaid::
+   :name: circuit-breaker-flow
+   :caption: MCP 熔断器工作流程
 
    flowchart TD
        CALL["工具调用请求"] --> CHECK{"连续错误 >= 3?"}
@@ -530,9 +556,15 @@ MCP 协议支持服务器在运行时通知客户端工具列表发生变化（`
 
        RESULT -->|"错误"| AUTH
 
-       style SHORT fill:#fee2e2,stroke:#f87171,color:#991b1b
-       style RESET fill:#dcfce7,stroke:#34d399,color:#166534
-       style INCR fill:#fef3c7,stroke:#f59e0b,color:#92400e
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
+       class SHORT fail
+       class RESET success
+       class INCR warn
 
 ******************
 Sampling 支持
@@ -596,8 +628,11 @@ MCP 协议的 Sampling 特性允许服务器反向请求 LLM 生成文本，实�
 LLM 调用通过 ``agent.auxiliary_client.call_llm()`` 完成，并使用 ``asyncio.to_thread()`` 将同步调用卸载到线程池，避免阻塞 MCP 事件循环。
 
 .. mermaid::
+   :name: sampling-seq
+   :caption: Sampling 消息处理序列图
 
    sequenceDiagram
+       autonumber
        participant MCP as MCP 服务器
        participant SDK as MCP SDK
        participant Handler as SamplingHandler

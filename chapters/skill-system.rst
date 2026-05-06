@@ -29,6 +29,12 @@ Hermes Agent 的技能系统（Skill System）正是为解决这一问题而设�
 .. mermaid::
 
    flowchart TD
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
        subgraph Sources["技能来源"]
            Bundled["内置技能"]
            Hub["Hub 安装"]
@@ -64,6 +70,13 @@ Hermes Agent 的技能系统（Skill System）正是为解决这一问题而设�
        QualifiedNote -.-> Qualified
        IndexedNote -.-> Indexed
        ActivatedNote -.-> Activated
+
+       class Bundled,Hub,User,Plugin start
+       class Synced,Indexed,Activated,Used success
+       class Modified warn
+       class Qualified,OnDemand,Dormant info
+       class Unchanged,SyncedNote,QualifiedNote,IndexedNote info
+       class ActivatedNote info
 
 *****************
 技能来源
@@ -480,6 +493,7 @@ v1 格式（纯技能名称，无哈希）在读取时被自动迁移。
 .. mermaid::
 
    sequenceDiagram
+       autonumber
        participant Agent as Agent
        participant Cache as 内存 LRU 缓存
        participant Disk as 磁盘快照

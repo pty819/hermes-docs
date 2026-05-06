@@ -7,32 +7,47 @@ flowchart TD
 
     B -->|否| D
 
-    D --> E[_try_openrouter]
-    E --> E1{OPENROUTER_API_KEY 存在?}
-    E1 -->|是| E2[使用 google/gemini-3-flash-preview]
-    E1 -->|否| F[_try_nous]
+    subgraph SG1["Fallback 1: OpenRouter"]
+        D --> E[_try_openrouter]
+        E --> E1{OPENROUTER_API_KEY 存在?}
+        E1 -->|是| E2[使用 google/gemini-3-flash-preview]
+        E1 -->|否| F[_try_nous]
+    end
 
-    F --> F1{Nous 已认证?}
-    F1 -->|是| F2{速率限制?}
-    F2 -->|是| F3[跳过]
-    F2 -->|否| F4{免费用户?}
-    F4 -->|是| F5[使用 mimo-v2-pro]
-    F4 -->|否| F6[使用 gemini-3-flash-preview]
-    F1 -->|否| G[_try_custom_endpoint]
+    subgraph SG2["Fallback 2: Nous Portal"]
+        F --> F1{Nous 已认证?}
+        F1 -->|是| F2{速率限制?}
+        F2 -->|是| F3[跳过]
+        F2 -->|否| F4{免费用户?}
+        F4 -->|是| F5[使用 mimo-v2-pro]
+        F4 -->|否| F6[使用 gemini-3-flash-preview]
+        F1 -->|否| G[_try_custom_endpoint]
+    end
 
-    G --> G1{OPENAI_BASE_URL 或 config 有自定义端点?}
-    G1 -->|是| G2[使用自定义端点 + gpt-4o-mini]
-    G1 -->|否| H[_try_codex]
+    subgraph SG3["Fallback 3: Custom Endpoint"]
+        G --> G1{OPENAI_BASE_URL 或 config 有自定义端点?}
+        G1 -->|是| G2[使用自定义端点 + gpt-4o-mini]
+        G1 -->|否| H[_try_codex]
+    end
 
-    H --> H1{Codex Token 有效?}
-    H1 -->|是| H2[使用 gpt-5.2-codex via Responses API]
-    H1 -->|否| I[_resolve_api_key_provider]
+    subgraph SG4["Fallback 4: Codex OAuth"]
+        H --> H1{Codex Token 有效?}
+        H1 -->|是| H2[使用 gpt-5.2-codex via Responses API]
+        H1 -->|否| I[_resolve_api_key_provider]
+    end
 
-    I --> I1[遍历 PROVIDER_REGISTRY]
-    I1 --> I2{找到有 API Key 的 Provider?}
-    I2 -->|是| I3[使用该 Provider 的默认辅助模型]
-    I2 -->|否| J[返回 None, None — 无可用 Provider]
+    subgraph SG5["Fallback 5: API Key Provider"]
+        I --> I1[遍历 PROVIDER_REGISTRY]
+        I1 --> I2{找到有 API Key 的 Provider?}
+        I2 -->|是| I3[使用该 Provider 的默认辅助模型]
+        I2 -->|否| J[返回 None, None — 无可用 Provider]
+    end
 
-    style A fill:#e1f5fe
-    style C2 fill:#c8e6c9
-    style J fill:#ffcdd2
+    classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+    classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+    class A start
+    class C2 success
+    class J fail

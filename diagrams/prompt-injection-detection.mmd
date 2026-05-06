@@ -33,6 +33,11 @@ flowchart TD
     E -->|是| F["返回: [BLOCKED: filename contained potential prompt injection (...). Content not loaded.]"]
     E -->|否| G[返回原始内容，不做修改]
 
-    style A fill:#e1f5fe
-    style F fill:#ffcdd2
-    style G fill:#c8e6c9
+    classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+    classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+    class A start
+    class F fail
+    class G success

@@ -104,59 +104,63 @@ Provider 注册表
 - **本地部署** ：Custom (Ollama, llama.cpp, vLLM, LM Studio)
 - **企业级** ：AWS Bedrock, Azure Foundry, GitHub Copilot, Copilot ACP
 
-可插拔 Provider 插件架构
-==========================
+Provider 注册表：HermesOverlay 与 models.dev
+================================================
 
-所有 33 个 Provider 现在以 **插件形式** 托管在 ``plugins/model-providers/`` 目录下。
-每个 Provider 是一个独立的子目录，包含 ``plugin.yaml`` 清单和 ``__init__.py`` 注册逻辑::
+Hermes 的 Provider 体系不是插件系统的一部分——Provider 是 **核心内置** 的，
+通过 ``hermes_cli/providers.py`` 中的 ``HERMES_OVERLAYS`` 字典和
+`models.dev <https://models.dev>`_ 社区目录 **双数据源** 合并实现。
 
-    plugins/model-providers/
-        anthropic/
-            __init__.py        # Provider 注册逻辑
-            plugin.yaml        # 清单文件
-        gemini/
-            __init__.py
-            plugin.yaml
-        bedrock/
-            __init__.py
-            plugin.yaml
-        ... (共 33 个)
+HermesOverlay 数据类
+~~~~~~~~~~~~~~~~~~~~~~
 
-这种可插拔架构带来了几个关键优势：
+每个 Hermes 特有的 Provider 配置通过 ``HermesOverlay`` 数据类定义::
 
-- **零核心改动** ：新增 Provider 只需在 ``plugins/model-providers/`` 下创建子目录，
-  无需修改 ``auxiliary_client.py`` 或 ``auth.py`` 的核心代码
-- **独立演进** ：每个 Provider 的适配逻辑（认证流程、API 格式转换、模型映射）
-  可以独立更新，不影响其他 Provider
-- **用户扩展** ：用户可以在 ``~/.hermes/plugins/`` 下创建自定义 Provider 插件，
-  通过 ``plugin.yaml`` 声明依赖和能力
+    @dataclass
+    class HermesOverlay:
+        provider: str                  # Provider 唯一标识
+        display_name: str              # 显示名称
+        transport: str                 # 传输协议类型
+        base_url: str = ""             # API 基础 URL
+        env_key: str = ""              # API Key 环境变量名
+        auth_flow: str = ""            # 认证流程类型
+        default_model: str = ""        # 默认模型
+        ...
 
-ProviderProfile 抽象
-======================
+``transport`` 字段决定了请求如何发送，支持三种值：
 
-``agent/credential_sources.py`` 定义了 ``ProviderProfile`` 抽象基类，
-为所有 Provider 插件提供统一的接口契约::
+- ``openai_chat``：OpenAI Chat Completions 兼容端点（大多数 Provider）
+- ``anthropic_messages``：Anthropic Messages API
+- ``codex_responses``：OpenAI Codex Responses API
 
-    class ProviderProfile(ABC):
-        """每个 Provider 插件必须实现的接口。"""
+``HERMES_OVERLAYS`` 字典包含 24 个 Hermes 特有的 Provider 覆盖配置，
+包括 OpenRouter、Nous Portal、Copilot ACP、Google Gemini CLI、
+Kimi、MiniMax、Z.AI 等。
 
-        @abstractmethod
-        def resolve_credentials(self) -> CredentialResult: ...
+models.dev 注册表
+~~~~~~~~~~~~~~~~~~
 
-        @abstractmethod
-        def get_base_url(self) -> str: ...
+``agent/models_dev.py`` 集成了 models.dev 社区数据库，覆盖 4000+ 模型
+和 109+ Provider。数据解析采用 **离线优先** 策略：
 
-        @abstractmethod
-        def get_default_model(self) -> Optional[str]: ...
+1. 打包的快照（离线可用）
+2. 磁盘缓存（``~/.hermes/models_dev_cache.json``）
+3. 网络获取（每 60 分钟后台刷新）
 
-        @abstractmethod
-        def supports_vision(self) -> bool: ...
+``PROVIDER_TO_MODELS_DEV`` 字典建立了 Hermes Provider ID 与 models.dev ID
+的映射关系。模型查找使用精确匹配 + 大小写不敏感回退的策略。
+
+双数据源合并
+~~~~~~~~~~~~~
+
+当用户请求某个 Provider 时，系统先在 ``HERMES_OVERLAYS`` 中查找
+Hermes 特有配置（如自定义 base_url、认证流程），然后合并 models.dev
+中的元数据（如上下文长度、能力标记）。这确保了 Hermes 特有的配置
+不会被社区数据覆盖，同时又能利用社区维护的模型信息。
 
 ``agent/credential_pool.py`` 管理凭证的生命周期——包括缓存、轮换、过期检测。
 当多个 Provider 配置了相同的 API Key 环境变量时，凭证池确保它们共享同一个
 凭证实例，避免重复的环境变量查找。
-
-.. mermaid:: ../diagrams/provider-resolution-flow.mmd
 
 ****************************
 辅助客户端路由
@@ -651,101 +655,80 @@ Anthropic 的错误消息格式为::
 该函数提取 ``available_tokens`` 值，使得 Hermes 可以在不改变 ``context_length`` 的前提下，仅调整 ``max_tokens`` 参数重试请求。
 
 ****************************
-传输抽象层
+客户端适配器
 ****************************
 
-Hermes 引入了 ``agent/transports/`` 包，将 LLM 调用的传输细节从辅助客户端和主循环中解耦。
-这一抽象层为所有 LLM 交互提供了统一的接口，无论底层使用 Chat Completions、Anthropic Messages、
-Bedrock Converse 还是 Codex Responses 协议。
+Hermes 的传输逻辑集中在 ``agent/auxiliary_client.py``（2400+ 行）中，
+通过 **适配器模式** 桥接不同 API 格式，而不是使用独立的传输包。
 
-BaseTransport 抽象基类
-========================
+辅助客户端是所有非主循环 LLM 调用的统一入口——上下文压缩、视觉分析、
+网页提取、会话搜索、记忆刷写等辅助任务都通过它路由。
 
-``agent/transports/base.py`` 定义了传输层的核心接口::
+适配器架构
+============
 
-    class BaseTransport(ABC):
-        """所有传输实现必须遵循的契约。"""
-
-        @abstractmethod
-        def send(self, request: TransportRequest) -> TransportResponse:
-            """同步发送请求，返回统一响应。"""
-
-        @abstractmethod
-        def send_stream(self, request: TransportRequest) -> Iterator[TransportChunk]:
-            """流式发送请求，返回 chunk 迭代器。"""
-
-        @abstractmethod
-        def capabilities(self) -> TransportCapabilities:
-            """返回此传输支持的能力集合。"""
-
-``agent/transports/types.py`` 定义了传输层的数据类型：
-
-- ``TransportRequest`` ：统一的请求结构（messages、model、tools、stream 等）
-- ``TransportResponse`` ：统一的响应结构（content、tool_calls、usage、finish_reason）
-- ``TransportChunk`` ：流式 chunk 结构（delta_content、delta_tool_calls、reasoning_delta）
-- ``TransportCapabilities`` ：能力描述（supports_vision、supports_tools、supports_streaming、max_context_length）
-
-四种传输实现
-==============
+``auxiliary_client.py`` 内嵌了多种适配器，根据 ``HermesOverlay.transport``
+字段自动选择：
 
 .. list-table::
    :header-rows: 1
    :widths: 25 20 55
 
-   * - 传输实现
+   * - 适配器
      - 文件
      - 适用场景
-   * - ChatCompletionsTransport
-     - ``chat_completions.py``
+   * - OpenAI (默认)
+     - ``auxiliary_client.py`` 内嵌
      - OpenAI 兼容端点（OpenRouter、自定义、大多数第三方）
-   * - AnthropicTransport
-     - ``anthropic.py``
+   * - AnthropicAdapter
+     - ``agent/anthropic_adapter.py``
      - Anthropic Messages API（原生 Anthropic、Anthropic 兼容端点）
-   * - BedrockTransport
-     - ``bedrock.py``
+   * - BedrockAdapter
+     - ``agent/bedrock_adapter.py``
      - AWS Bedrock Converse API
-   * - CodexTransport
-     - ``codex.py``
+   * - CodexAdapter
+     - ``auxiliary_client.py`` 内嵌
      - OpenAI Codex Responses API
+   * - ACPAdapter
+     - ``agent/copilot_acp_client.py``
+     - GitHub Copilot ACP（设备码认证）
+   * - GeminiCloudCode
+     - ``agent/gemini_cloudcode_adapter.py``
+     - Google Gemini Cloud Code Assist API
 
-每种传输实现处理各自协议的细节差异——消息格式转换、流式事件解析、
-工具调用序列化、推理内容提取——对外暴露完全统一的接口。
+每个适配器处理各自协议的细节差异——消息格式转换、流式事件解析、
+工具调用序列化、推理内容提取——对外暴露统一的 ``SimpleNamespace`` 响应格式。
 
-统一调用示例
-=============
+AnthropicAdapter
+=================
 
-::
+``agent/anthropic_adapter.py`` 将 Anthropic Messages API 的特有格式
+翻译为 OpenAI 兼容格式：
 
-    # 无论底层传输是什么，调用方式完全相同
-    transport = resolve_transport(provider, model)
-    request = TransportRequest(
-        messages=[{"role": "user", "content": "Hello"}],
-        model="claude-sonnet-4",
-        stream=True,
-    )
+- ``content[]`` 数组 → ``choices[0].message.content``
+- ``tool_use`` content block → ``tool_calls[]`` 数组
+- ``tool_result`` → ``role: "tool"`` 消息
+- 流式 ``content_block_delta`` → OpenAI 格式的 delta chunk
 
-    # 流式调用
-    for chunk in transport.send_stream(request):
-        if chunk.delta_content:
-            print(chunk.delta_content, end="")
-        if chunk.delta_tool_calls:
-            handle_tool_calls(chunk.delta_tool_calls)
+BedrockAdapter
+===============
 
-这一层的引入使得辅助客户端（``auxiliary_client.py``）和主 Agent 循环
-不再直接依赖特定的 SDK（``openai`` 、``anthropic`` 、``boto3``），
-而是通过传输层间接调用。这大幅降低了 Provider 切换时的代码变更量。
+``agent/bedrock_adapter.py`` 为 AWS Bedrock Converse API 提供原生适配：
 
-原生适配器
-===========
+- 原生 Converse API 统一接口支持所有 Bedrock 模型
+- AWS 凭证链：IAM 角色、SSO Profile、环境变量、实例元数据
+- 动态模型发现：通过 Bedrock 控制面自动发现可用的基础模型
+- 支持跨区域推理 Profile 实现更好的容量和自动故障转移
 
-除了四种核心传输实现外，Hermes 还提供了两个原生适配器：
+GeminiCloudCodeClient
+=======================
 
-- ``agent/gemini_native_adapter.py`` ：Google Gemini 的原生 SDK 适配器，
-  支持 Gemini 特有的多模态输入格式和安全设置
-- ``agent/codex_responses_adapter.py`` ：OpenAI Codex Responses API 的完整适配器，
-  处理 ``developer`` 角色、推理 token 提取和 Responses API 的特有响应格式
+``agent/gemini_cloudcode_adapter.py`` 为 Google Gemini CLI 的 Cloud Code
+Assist API 实现完整的双向翻译：
 
-这些适配器在传输层之上提供了更深层次的 Provider 特定优化。
+- OpenAI ``messages[]`` / ``tools[]`` → Gemini ``contents[]`` / ``functionDeclarations``
+- 请求体包裹为 ``{project, model, user_prompt_id, request}`` 格式
+- SSE 流式传输产出 OpenAI 格式的 delta chunk
 
 ****************************
 总结
@@ -753,11 +736,12 @@ BaseTransport 抽象基类
 
 Hermes 的多 Provider 统一接入层是一个精心设计的系统，其核心原则是：
 
-1.  **可插拔架构** ：33 个 Provider 以插件形式托管，新增 Provider 零核心改动
-2.  **传输抽象** ：四种传输实现统一了 Chat Completions、Anthropic、Bedrock、Codex 协议
-3.  **级联回退** ：当首选 Provider 不可用时，自动尝试下一个
-4.  **适配器模式** ：通过适配器桥接不同 API 格式，保持向后兼容
+1.  **双数据源合并** ：models.dev 目录（109+ Provider）+ Hermes overlays（24 个 Provider 的特有元数据），通过 ``HermesOverlay`` 统一暴露
+2.  **适配器模式** ：六种适配器桥接不同 API 格式（OpenAI、Anthropic、Bedrock、Codex、ACP、Gemini Cloud Code），保持向后兼容
+3.  **级联回退** ：当首选 Provider 不可用时，自动尝试 OpenRouter → Nous → Custom → Codex → API-key 链
+4.  **智能路由** ：可选的 cheap-vs-strong 模型路由，通过消息复杂度分析自动选择廉价或强力模型
 5.  **智能缓存** ：线程安全的客户端缓存，带有事件循环验证和过时驱逐
 6.  **优雅降级** ：从精确配置到启发式估算，多层次的上下文长度解析
+7.  **速率保护** ：跨会话的 Rate Limit Guard，防止重试放大效应消耗配额
 
-这些设计使得 Hermes 能够在 20+ 个 Provider 之间无缝切换，为用户提供始终可用的 Agent 体验。
+这些设计使得 Hermes 能够在 109+ 个 Provider 之间无缝切换，为用户提供始终可用的 Agent 体验。

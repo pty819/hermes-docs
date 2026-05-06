@@ -383,6 +383,8 @@ FTS5 的默认分词器（tokenizer）是 ``unicode61`` ，
 FTS5 搜索流程（含 CJK 回退）：
 
 .. mermaid::
+   :name: fig-fts5-search-flow
+   :caption: FTS5 全文搜索流程（含 CJK 回退）
 
    flowchart TD
        A["用户输入搜索查询"] --> B["_sanitize_fts5_query()"]
@@ -399,6 +401,18 @@ FTS5 搜索流程（含 CJK 回退）：
        I -- 是 --> J["LIKE 回退搜索<br/>%query%"]
        J --> K
        K --> L["返回结果<br/>(含 snippet + 上下文)"]
+
+       class A start
+       class L success
+       class G fail
+       class J warn
+       class B,C,H,K info
+
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
 
 写入并发控制
 --------------
@@ -510,21 +524,24 @@ PASSIVE 模式不会阻塞——它只合并那些没有其他连接正在使用
 写入并发时序图：
 
 .. mermaid::
+   :name: fig-write-concurrency
+   :caption: 写入并发控制时序图
 
    sequenceDiagram
+       autonumber
        participant T1 as 线程 1
        participant Lock as threading.Lock
        participant DB as SQLite (WAL)
        participant T2 as 线程 2
-   
+
        T1->>Lock: acquire()
        T1->>DB: BEGIN IMMEDIATE
        T1->>DB: INSERT INTO messages ...
        T1->>DB: COMMIT
        T1->>Lock: release()
-   
+
        Note over T2: T2 在 T1 持有锁期间尝试写入
-   
+
        T2->>Lock: acquire() — 阻塞
        T1->>Lock: release()
        T2->>Lock: acquire() — 成功
@@ -532,9 +549,9 @@ PASSIVE 模式不会阻塞——它只合并那些没有其他连接正在使用
        T2->>DB: INSERT INTO messages ...
        T2->>DB: COMMIT
        T2->>Lock: release()
-   
+
        Note over T1,T2: 不同进程的竞争由 SQLite WAL 处理
-   
+
        rect rgb(255, 230, 230)
            Note over DB: Process A: BEGIN IMMEDIATE holds WAL write lock
            Note over DB: Process B: BEGIN IMMEDIATE - database is locked
@@ -688,6 +705,8 @@ SessionDB 管理的会话有完整的状态机，从创建到删除。
 会话生命周期状态图：
 
 .. mermaid::
+   :name: fig-session-lifecycle
+   :caption: 会话生命周期状态图
 
    stateDiagram-v2
        [*] --> Created : create_session()
@@ -1045,6 +1064,8 @@ SessionDB 使用**顺序迁移** 策略——从当前版本开始，
 Schema 迁移流程图：
 
 .. mermaid::
+   :name: fig-schema-migration
+   :caption: Schema 迁移流程图 (v1-v6)
 
    flowchart TD
        A["_init_schema()"] --> B["创建基础表<br/>(sessions, messages, indexes)"]
@@ -1070,6 +1091,17 @@ Schema 迁移流程图：
        P --> Q["初始化 FTS5<br/>(虚拟表 + 触发器)"]
        Q --> R["COMMIT"]
        D --> Q
+
+       class A start
+       class R success
+       class G,I,K,M,O info
+       class B,Q info
+
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
 
 轨迹记录
 ----------
@@ -1205,222 +1237,6 @@ SessionDB 支持灵活的会话 ID 解析策略：
      - 1.0
      - SQLite 内部忙等待超时（秒）
 
-Curator：后台技能维护编排器
-------------------------------
-
-在 Agent 长期运行的过程中，用户创建和 Agent 自主生成的技能会不断积累。
-如果不加维护，技能库会膨胀为数百个窄域技能，每个技能只捕获了一次特定会话的 bug 或工作流。
-这不仅降低了技能搜索的精确度，也让 Agent 在查找相关指令时面临选择过载。
-
-``agent/curator.py`` 实现了一个 **后台技能维护编排器** ，
-它定期审查 Agent 创建的技能，通过自动状态迁移和 LLM 驱动的整合/修剪
-来保持技能库的质量。Curator 的设计哲学是：
-
-- **只操作 Agent 创建的技能** ：捆绑技能（bundled）和 Hub 安装的技能（hub-installed）永远不受影响。
-- **只归档，不删除** ：所有移除操作都是移动到 ``~/.hermes/skills/.archive/`` ，可通过 ``hermes curator restore`` 恢复。
-- **固定技能不受影响** ：标记为 pinned 的技能跳过所有自动迁移。
-- **辅助模型运行** ：LLM 审查使用 ``auxiliary.client`` 和独立的 prompt cache，不影响主会话的上下文。
-
-触发机制：空闲检测而非 Cron 守护进程
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Curator 不使用 cron 守护进程，而是采用 **空闲检测触发** 模式。
-当 Agent 处于空闲状态且上次 curator 运行距今超过 ``interval_hours``（默认 7 天）时，
-``maybe_run_curator()`` 在 ``on_session_start`` 钩子中被调用：
-
-::
-
-    def maybe_run_curator(*, idle_for_seconds=None, on_summary=None):
-        if not should_run_now():
-            return None
-        if idle_for_seconds is not None:
-            min_idle_s = get_min_idle_hours() * 3600.0  # 默认 2 小时
-            if idle_for_seconds < min_idle_s:
-                return None
-        return run_curator_review(on_summary=on_summary)
-
-首次运行行为：当 ``last_run_at`` 为空（新安装或升级后），
-curator 不会立即运行，而是将 ``last_run_at`` 设置为当前时间，
-推迟到一个完整间隔后才首次运行。用户可以通过 ``hermes curator run`` 手动触发。
-
-双阶段审查流程
-~~~~~~~~~~~~~~~~
-
-一次 curator 运行包含两个阶段：
-
-**阶段 1：自动状态迁移（纯逻辑，无 LLM）**
-
-``apply_automatic_transitions()`` 遍历所有 Agent 创建的技能，
-根据最后活动时间自动迁移状态：
-
-.. code-block:: python
-
-    stale_cutoff = now - timedelta(days=get_stale_after_days())    # 默认 30 天
-    archive_cutoff = now - timedelta(days=get_archive_after_days()) # 默认 90 天
-
-    for row in agent_created_report():
-        if row.get("pinned"):
-            continue
-        anchor = last_activity or created_at or now
-
-        if anchor <= archive_cutoff:
-            archive_skill(name)        # 归档：90 天未活动
-        elif anchor <= stale_cutoff:
-            set_state(name, STALE)     # 标记过期：30 天未活动
-        elif anchor > stale_cutoff and current == STALE:
-            set_state(name, ACTIVE)    # 重新激活：过期技能被再次使用
-
-**阶段 2：LLM 整合审查（后台 AIAgent Fork）**
-
-Curator 启动一个独立的 ``AIAgent`` 实例（通过 ``run_conversation()``），
-使用一个约 500 行的详细 prompt 来审查技能库。LLM 审查的核心任务是
-**伞化整合（umbrella-ification）** ——将多个窄域技能合并为类级伞技能：
-
-- **扫描前缀聚类** ：识别共享首词或领域关键词的技能组（如 ``hermes-config-*``、``gateway-*``、``mcp-*``）
-- **三种整合方式** ：
-   - **合并到现有伞技能** ：一个已有技能足够宽泛作为伞，其他技能的内容作为子节或参考文件吸收
-   - **创建新伞技能** ：没有现有成员足够宽泛，创建新的 ``SKILL.md`` 覆盖共享工作流
-   - **降级为支持文件** ：窄域但有价值的内容移入伞技能的 ``references/``、``templates/`` 或 ``scripts/`` 子目录
-
-LLM 审查使用 ``auxiliary.curator.{provider,model}`` 配置的模型运行，
-独立于主对话的 prompt cache。审查 fork 设置 ``max_iterations=9999``
-以支持对数百个候选技能的大规模整合。
-
-技能生命周期状态
-~~~~~~~~~~~~~~~~~~~
-
-Curator 管理的技能有明确的生命周期状态：
-
-.. list-table::
-   :header-rows: 1
-   :widths: 15 20 65
-
-   * - 状态
-     - 触发条件
-     - 含义
-   * - ``active``
-     - 默认
-     - 正常使用的技能，参与 LLM 审查
-   * - ``stale``
-     - 30 天无活动
-     - 标记为过期，等待进一步审查或重新激活
-   * - ``archived``
-     - 90 天无活动或 LLM 审查决定归档
-     - 移入 ``.archive/`` 目录，不再出现在技能列表中
-   * - ``pinned``
-     - 用户手动固定
-     - 跳过所有自动迁移和 LLM 审查
-
-.. mermaid::
-
-   stateDiagram-v2
-       [*] --> Active : 创建
-       Active --> Stale : 30 天无活动
-       Stale --> Archived : 90 天无活动
-       Stale --> Active : 被再次使用
-       Active --> Archived : LLM 审查决定整合/修剪
-       Active --> Pinned : 用户固定
-       Pinned --> Active : 用户取消固定
-       Archived --> Active : hermes curator restore
-
-合并分类与报告
-~~~~~~~~~~~~~~~~~~
-
-Curator 的一个关键设计是精确区分 **整合（consolidated）** 和 **修剪（pruned）**：
-
-- **整合** ：技能的内容被吸收到了伞技能中（内容仍在，只是换了位置）
-- **修剪** ：技能因为过期/无关被归档（内容没有被保留到其他地方）
-
-分类通过三层信号融合实现：
-
-1. **``absorbed_into`` 声明（权威信号）** ：LLM 在调用 ``skill_manage(action='delete')`` 时必须传递 ``absorbed_into=<umbrella>`` 参数。这是最直接的意图声明。
-
-2. **结构化 YAML 块** ：LLM 在最终回复中输出 ``consolidations:`` 和 ``prunings:`` 列表，包含原因说明。
-
-3. **工具调用启发式审计** ：扫描本次运行的 ``skill_manage`` 工具调用，查找对目标技能的 ``write_file``/``patch``/``create`` 操作中是否引用了被移除技能的名称。
-
-``_reconcile_classification()`` 按优先级融合这三个信号：
-``absorbed_into`` 声明 > 模型 YAML 块 > 工具调用启发式。
-
-每次运行生成一份完整的报告，存储在 ``~/.hermes/logs/curator/<YYYYMMDD-HHMMSS>/`` 目录中：
-
-- ``run.json`` — 机器可读的完整运行记录（含工具调用、分类结果、计数器）
-- ``REPORT.md`` — 人类可读的 Markdown 报告（含合并/修剪清单、状态迁移、cron 引用重写）
-- ``cron_rewrites.json`` — cron 任务的技能引用重写记录（仅在有重写时生成）
-
-Cron 技能引用重写
-~~~~~~~~~~~~~~~~~~~~
-
-当 curator 将技能 X 整合到伞技能 Y 时，任何引用了技能 X 的 cron 任务
-在下次运行时将无法加载指令。Curator 在每次整合后自动重写 ``jobs.json``
-中受影响的 ``skills``/``skill`` 字段，确保定时任务在整合后继续正常工作。
-
-快照与回滚
-~~~~~~~~~~~~
-
-``agent/curator_backup.py`` 在每次变更运行前创建技能目录的 tar.gz 快照。
-快照包含：
-
-- 所有 SKILL.md 及其子目录（``scripts/``、``references/``、``templates/``）
-- ``.usage.json`` 使用遥测
-- ``.archive/`` 目录（确保回滚也能恢复已归档的技能）
-- ``.curator_state`` 状态文件
-- ``cron/jobs.json`` 副本（用于 cron 引用的回滚）
-
-快照存储在 ``~/.hermes/skills/.curator_backups/<UTC-ISO>/`` 中，默认保留最近 5 份。
-回滚（``hermes curator rollback``）会将当前目录移入快照（使回滚本身也可撤销），
-然后解压选定的快照。
-
-预览模式（Dry Run）
-~~~~~~~~~~~~~~~~~~~~~
-
-``hermes curator run --dry-run`` 执行完整的审查流程但跳过所有变更操作：
-
-- 自动状态迁移不执行
-- LLM 审查使用特殊的 dry-run prompt（禁止 ``skill_manage`` 的写操作）
-- 仍然生成 ``REPORT.md`` 描述 curator 会做什么
-- ``last_run_at`` 不更新（不影响下次自动运行的调度）
-
-这允许用户在执行实际整合前审查 curator 的计划。
-
-配置
-~~~~~~
-
-Curator 的行为通过 ``config.yaml`` 中的 ``curator`` 和 ``auxiliary.curator`` 配置控制：
-
-::
-
-    curator:
-      enabled: true              # 总开关
-      interval_hours: 168        # 运行间隔（默认 7 天）
-      min_idle_hours: 2          # 最小空闲时间
-      stale_after_days: 30       # 标记过期的阈值
-      archive_after_days: 90     # 归档的阈值
-
-    auxiliary:
-      curator:
-        provider: auto           # LLM 审查使用的 Provider
-        model: ""                # LLM 审查使用的模型
-        api_key: ""              # 可选的独立 API Key
-        base_url: ""             # 可选的独立 Base URL
-
-CLI 命令
-~~~~~~~~~~
-
-::
-
-    hermes curator status        # 显示状态、技能统计、最近活动
-    hermes curator run           # 手动触发一次审查
-    hermes curator run --dry-run # 预览模式
-    hermes curator pause         # 暂停自动运行
-    hermes curator resume        # 恢复自动运行
-    hermes curator restore <n>   # 恢复已归档的技能
-    hermes curator rollback      # 回滚到最近的快照
-
-``hermes curator status`` 的输出包括：总运行次数、上次运行时间和摘要、
-技能按状态分组的统计（active/stale/archived）、
-最近活动和最不活跃的技能列表、固定技能列表。
-
 总结
 ------
 
@@ -1433,6 +1249,5 @@ Hermes 的会话状态系统是一个经过深思熟虑的持久化架构：
 - **会话分支和标题血脉** 支持了复杂的会话管理场景
 - **双模式 Token 计数** 适配了 CLI 和 Gateway 两种运行模式
 - **防御性反序列化** 确保了即使数据损坏，会话也能继续
-- **Curator 后台维护** 通过空闲检测触发的双阶段审查（自动状态迁移 + LLM 伞化整合）保持技能库质量，快照回滚保证安全
 
 这个系统是 Hermes 能够在多平台、多进程环境下稳定运行的基石。

@@ -92,12 +92,15 @@ Hermes Agent 完美地体现了这四个要素：
 所有 Agent 架构，无论多么复杂，都可以归结为一个基本循环：
 
 .. mermaid::
+   :name: observe-think-act-loop
+   :caption: Observe-Think-Act 基础循环
 
    sequenceDiagram
+       autonumber
        participant U as 用户/环境
        participant A as Agent (LLM)
        participant T as 工具集
-   
+
        U->>A: 输入 (Observe)
        loop 直到任务完成或预算耗尽
            A->>A: 思考与规划 (Think)
@@ -268,59 +271,76 @@ Hermes 的规划通过以下机制实现：
 综合以上分析，我们可以绘制出通用 Agent 的架构模式：
 
 .. mermaid::
+   :name: agent-architecture-overview
+   :caption: 通用 Agent 架构全景
 
-   graph TB
-       subgraph "用户接口层"
+   flowchart TB
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
+       subgraph UI["用户接口层"]
+           direction LR
            CLI["CLI / TUI"]
            GW["网关 RPC"]
            BOT["Bot 集成"]
        end
-   
-       subgraph "Agent 核心"
+
+       subgraph CORE["Agent 核心"]
            LOOP["主循环<br/>run_conversation()"]
            BUDGET["迭代预算<br/>IterationBudget"]
        end
-   
-       subgraph "LLM 适配层"
+
+       subgraph LLM["LLM 适配层"]
+           direction LR
            OPENAI["OpenAI<br/>Chat Completions"]
            CODEX["Codex<br/>Responses API"]
            ANTHRO["Anthropic<br/>Messages API"]
            BEDROCK["AWS Bedrock<br/>Converse API"]
        end
-   
-       subgraph "工具层"
+
+       subgraph TOOLLAYER["工具层"]
+           direction LR
            REG["工具注册中心<br/>registry"]
            TOOLS["工具实现<br/>terminal / file / web / ..."]
            MCP["MCP 工具"]
            PLUGINS["插件工具"]
        end
-   
-       subgraph "状态层"
+
+       subgraph STATE["状态层"]
+           direction LR
            SESSION["会话存储<br/>SQLite"]
            MEMORY["长期记忆<br/>MemoryStore"]
            COMPRESS["上下文压缩<br/>ContextCompressor"]
            TRAJ["轨迹保存<br/>trajectory"]
        end
-   
+
        CLI --> LOOP
        GW --> LOOP
        BOT --> LOOP
-   
+
        LOOP --> BUDGET
        LOOP --> OPENAI
        LOOP --> CODEX
        LOOP --> ANTHRO
        LOOP --> BEDROCK
-   
+
        LOOP --> REG
        REG --> TOOLS
        REG --> MCP
        REG --> PLUGINS
-   
+
        LOOP --> SESSION
        LOOP --> MEMORY
        LOOP --> COMPRESS
        LOOP --> TRAJ
+
+       class CLI,GW,BOT start
+       class LOOP,BUDGET success
+       class OPENAI,CODEX,ANTHRO,BEDROCK info
+       class REG,TOOLS,MCP,PLUGINS warn
+       class SESSION,MEMORY,COMPRESS,TRAJ info
 
 Hermes 如何映射到这些概念
 ---------------------------
@@ -345,7 +365,7 @@ Hermes 如何映射到这些概念
      - 先检查 Agent 级拦截工具（todo/memory/session_search），再分发到注册中心
    * - 错误恢复
      - ``agent/error_classifier.py`` :: ``classify_api_error()``
-     - 16 种错误类型，自动选择凭证轮换/压缩/回退等恢复策略
+     - 14 种错误类型，自动选择凭证轮换/压缩/回退等恢复策略
    * - 上下文管理
      - ``agent/context_compressor.py``
      - 头尾保护 + 中间摘要，使用辅助模型生成摘要

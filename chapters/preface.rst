@@ -41,20 +41,22 @@
 
 选择 Hermes Agent 作为分析对象有三个理由：
 
-**第一，规模适中。** Hermes 的核心循环（``run_agent.py``）约 11000 行，
+**第一，规模适中。** Hermes 的核心循环（``run_agent.py``）约 12000 行，
 工具系统约 3000 行。这个规模大到足以覆盖生产系统的所有关键挑战，
 又小到可以被一个人完整理解。它不是那种需要六个月才能读完的百万行代码库。
 
 **第二，架构完整。** Hermes 涵盖了一个 Agent 系统的几乎所有核心子系统：
 
 - Agent 主循环（observe-think-act loop）
-- 流式 API 调用与多提供商适配
-- 工具注册、发现、调度与并行执行
+- 流式 API 调用与多提供商适配（109+ Provider，5 种适配器）
+- 工具注册、发现、调度与并行执行（50+ 工具，7 种执行环境后端）
 - 上下文压缩与 prompt 缓存
 - 会话持久化与状态管理
 - 错误分类与智能恢复
 - 子代理委派与预算共享
+- 多 Profile 协作 Kanban（SQLite 持久化任务看板，调度器 + Worker 模型）
 - 插件系统与 MCP 工具集成
+- 智能模型路由（cheap-vs-strong 自动选择）
 
 **第三，设计有启发性。** Hermes 的许多设计决策并非显而易见。
 例如，它使用 ``SimpleNamespace`` 对象来统一不同 API 模式的响应格式；
@@ -93,8 +95,15 @@ OpenRouter 包装在 ``metadata.raw`` JSON 嵌套中时，你需要三层解包�
 本书的组织遵循从整体到局部、从概念到实现的原则。
 
 .. mermaid::
+   :name: reading-path
+   :caption: 推荐阅读路径
 
-   graph LR
+   flowchart LR
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
        A["前言<br/>(你在这里)"] --> B["第一部分：基础概念"]
        B --> C["Agent Loop<br/>核心循环"]
        C --> D["工具系统"]
@@ -107,6 +116,12 @@ OpenRouter 包装在 ``metadata.raw`` JSON 嵌套中时，你需要三层解包�
        H --> I["插件与扩展"]
        I --> J["安全与配置"]
        J --> K["第二部分：经验与实战"]
+
+       class A start
+       class C success
+       class D,E,F warn
+       class G,H,I,J info
+       class K success
 
 **如果你是完全的新手：** 从第一部分的基础概念开始，按顺序阅读到 Agent Loop 章节。
 这是本书最重要的章节，涵盖了 Agent 主循环的完整生命周期。之后可以根据兴趣选择其他章节。

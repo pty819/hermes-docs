@@ -262,6 +262,7 @@ prompt.submit 完整流程
    :caption: prompt.submit 完整时序
 
    sequenceDiagram
+       autonumber
        participant TUI as TUI 前端
        participant GW as Gateway
        participant Session as 会话管理器
@@ -328,29 +329,33 @@ prompt.submit 完整流程
 关键设计决策：**prompt.submit 立即返回 ``{status: "streaming"}``** 。
 这意味着 TUI 前端不需要等待 Agent 完成，可以继续处理用户的其他操作（如发送 ``/interrupt``）。
 
-38 个 RPC 方法分类表
+56 个 RPC 方法分类表
 ======================
 
-Gateway 暴露了约 38 个 RPC 方法，按功能分为七大类：
+``tui_gateway/server.py``（3086 行）通过 ``@method`` 装饰器定义了 56 个 RPC 方法，
+按功能分为十二大类。
 
-.. list-table:: Session（会话管理）— 12 个方法
+Session（会话管理）— 13 个方法
+-------------------------------
+
+.. list-table::
    :header-rows: 1
-   :widths: 30 50 20
+   :widths: 28 52 20
 
    * - 方法名
      - 功能
      - 阻塞性
    * - session.create
-     - 创建新会话（异步构建 Agent）
+     - 创建新会话（异步构建 Agent，返回 session_id）
      - 快速
    * - session.close
      - 关闭会话，释放 Agent 和 SlashWorker
      - 快速
    * - session.list
-     - 列出历史会话（TUI + CLI）
+     - 列出历史会话（TUI + CLI，合并排序）
      - 快速
    * - session.resume
-     - 恢复之前的会话
+     - 恢复之前的会话（按 session_id 或标题查找）
      - **长时**
    * - session.title
      - 获取/设置会话标题
@@ -359,140 +364,276 @@ Gateway 暴露了约 38 个 RPC 方法，按功能分为七大类：
      - 获取 token 使用量
      - 快速
    * - session.history
-     - 获取对话历史
+     - 获取对话历史（转换为 messages 数组）
      - 快速
    * - session.undo
-     - 撤销最后一轮对话
+     - 撤销最后一轮对话（运行中拒绝执行）
      - 快速
    * - session.compress
-     - 手动压缩上下文
+     - 手动压缩上下文（运行中拒绝执行）
      - 快速
    * - session.save
      - 保存对话到 JSON 文件
      - 快速
    * - session.branch
-     - 从当前会话分支新会话
+     - 从当前会话分支新会话（加载完整历史）
      - **长时**
    * - session.interrupt
-     - 中断当前 Agent 执行
+     - 中断当前 Agent 执行（设置 interrupted 标志）
+     - 快速
+   * - session.steer
+     - 注入消息到下一个工具结果（不中断，不违反 role 交替规则）
      - 快速
 
-.. list-table:: Prompt（提示处理）— 4 个方法
+Prompt（提示处理）— 4 个方法
+-----------------------------
+
+.. list-table::
    :header-rows: 1
-   :widths: 30 50 20
+   :widths: 28 52 20
 
    * - 方法名
      - 功能
      - 阻塞性
    * - prompt.submit
-     - 提交用户消息（流式响应）
+     - 提交用户消息（流式响应，立即返回 streaming 状态）
      - 快速（返回后异步执行）
    * - prompt.background
-     - 后台执行提示
+     - 后台执行提示（独立 Agent 实例，返回 task_id）
      - 快速
    * - prompt.btw
-     - 旁注式提问（不持久化，无工具）
+     - 旁注式提问（不持久化，无工具，max_iterations=8）
      - 快速
-   * - session.steer
-     - 注入消息到下一个工具结果
+   * - clipboard.paste
+     - 从系统剪贴板粘贴图片到附件列表
      - 快速
 
-.. list-table:: Config（配置管理）— 2 个方法
+Media（媒体附件）— 2 个方法
+----------------------------
+
+.. list-table::
    :header-rows: 1
-   :widths: 30 50 20
+   :widths: 28 52 20
 
    * - 方法名
      - 功能
      - 阻塞性
-   * - config.set
-     - 设置配置项（model/verbose/yolo/reasoning/skin/personality 等）
+   * - image.attach
+     - 附加本地图片（验证格式，读取元数据，估算 token）
      - 快速
-   * - config.get
-     - 读取配置项（provider/full/prompt/skin/reasoning/compact 等）
+   * - input.detect_drop
+     - 检测文件拖放（区分图片和普通文件）
      - 快速
 
-.. list-table:: Interaction（交互响应）— 4 个方法
+Interaction（交互响应）— 4 个方法
+-----------------------------------
+
+.. list-table::
    :header-rows: 1
-   :widths: 30 50 20
+   :widths: 28 52 20
 
    * - 方法名
      - 功能
      - 阻塞性
    * - clarify.respond
-     - 响应 clarify 请求
+     - 响应 clarify 请求（唤醒阻塞的 Agent 线程）
      - 快速
    * - sudo.respond
-     - 响应 sudo 密码请求
+     - 响应 sudo 密码请求（唤醒阻塞的 Agent 线程）
      - 快速
    * - secret.respond
-     - 响应 secret 输入请求
+     - 响应 secret 输入请求（唤醒阻塞的 Agent 线程）
      - 快速
    * - approval.respond
-     - 响应命令审批请求
+     - 响应命令审批请求（approve/deny，支持 resolve_all）
      - 快速
 
-.. list-table:: Completion（补全）— 2 个方法
+Config（配置管理）— 3 个方法
+------------------------------
+
+.. list-table::
    :header-rows: 1
-   :widths: 30 50 20
+   :widths: 28 52 20
+
+   * - 方法名
+     - 功能
+     - 阻塞性
+   * - config.set
+     - 设置配置项（model/reasoning/skin/personality/voice 等）
+     - 快速
+   * - config.get
+     - 读取配置项（provider/full/prompt/skin/reasoning/compact 等）
+     - 快速
+   * - config.show
+     - 返回结构化的配置概览（Model/Agent/Environment 分节）
+     - 快速
+
+Completion（补全）— 2 个方法
+------------------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 52 20
 
    * - 方法名
      - 功能
      - 阻塞性
    * - complete.path
-     - 文件路径补全
+     - 文件路径补全（支持 ``@file:`` / ``@folder:`` 上下文引用）
      - 快速
    * - complete.slash
-     - Slash 命令补全
+     - Slash 命令补全（合并 COMMAND_REGISTRY + skill commands + TUI extras）
      - 快速
 
-.. list-table:: Command（命令）— 3 个方法
+Command（命令）— 4 个方法
+---------------------------
+
+.. list-table::
    :header-rows: 1
-   :widths: 30 50 20
+   :widths: 28 52 20
 
    * - 方法名
      - 功能
      - 阻塞性
    * - command.resolve
-     - 解析命令名/别名
+     - 解析命令名/别名（返回规范名称和元数据）
      - 快速
    * - command.dispatch
-     - 调度 slash 命令（skill/plugin/quick command）
+     - 调度 slash 命令（skill/plugin/quick command 前置处理）
+     - 快速
+   * - commands.catalog
+     - 获取完整命令目录（COMMAND_REGISTRY + skills + quick_commands）
      - 快速
    * - cli.exec
-     - 执行 hermes CLI 子命令
+     - 执行 hermes CLI 子命令（subprocess，最长 600s 超时）
      - **长时**
 
-.. list-table:: Tool & System（工具与系统）— 8+ 个方法
+Voice（语音）— 3 个方法
+--------------------------
+
+.. list-table::
    :header-rows: 1
-   :widths: 30 50 20
+   :widths: 28 52 20
 
    * - 方法名
      - 功能
      - 阻塞性
-   * - clipboard.paste
-     - 从剪贴板粘贴图片
+   * - voice.toggle
+     - 开关语音模式（status/on/off，持久化到 config）
      - 快速
-   * - image.attach
-     - 附加本地图片
+   * - voice.record
+     - 控制语音录制（start/stop，stop 时自动转录返回文本）
      - 快速
-   * - input.detect_drop
-     - 检测文件拖放
+   * - voice.tts
+     - 文字转语音播放（后台线程执行 speak_text）
      - 快速
-   * - process.stop
-     - 终止所有后台进程
+
+Model & Tools（模型与工具）— 6 个方法
+---------------------------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 52 20
+
+   * - 方法名
+     - 功能
+     - 阻塞性
+   * - model.options
+     - 列出所有已认证 Provider 及其可用模型
+     - 快速
+   * - tools.list
+     - 列出所有 toolset 及其工具（含启用状态）
+     - 快速
+   * - tools.show
+     - 列出所有工具定义（按 toolset 分组，含描述）
+     - 快速
+   * - tools.configure
+     - 启用/禁用 toolset 或 MCP server（重置 Agent 刷新工具）
+     - 快速
+   * - toolsets.list
+     - 列出所有 toolset 概览（不含工具详情）
      - 快速
    * - reload.mcp
-     - 重新加载 MCP 服务器
+     - 重新加载所有 MCP server（shutdown → discover → refresh_tools）
      - 快速
-   * - commands.catalog
-     - 获取命令目录（含 skill、plugin、quick command）
+
+System（系统管理）— 8 个方法
+------------------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 52 20
+
+   * - 方法名
+     - 功能
+     - 阻塞性
+   * - terminal.resize
+     - 更新终端宽度（影响流式渲染器列宽）
+     - 快速
+   * - setup.status
+     - 检查是否有 Provider 已配置
+     - 快速
+   * - process.stop
+     - 终止所有后台进程（process_registry.kill_all）
      - 快速
    * - paste.collapse
-     - 折叠粘贴的文本
+     - 折叠粘贴的长文本（保存到 ~/.hermes/pastes/，返回占位符）
      - 快速
-   * - model.options
-     - 列出可用模型
+   * - shell.exec
+     - 执行 shell 命令（subprocess，30s 超时，含危险命令检测）
      - 快速
+   * - agents.list
+     - 列出所有后台 Agent 进程
+     - 快速
+   * - plugins.list
+     - 列出所有已加载插件
+     - 快速
+   * - insights.get
+     - 获取使用洞察（按天数统计会话数和消息数）
+     - 快速
+
+Rollback（快照回滚）— 3 个方法
+--------------------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 52 20
+
+   * - 方法名
+     - 功能
+     - 阻塞性
+   * - rollback.list
+     - 列出所有 Git 快照 checkpoint
+     - 快速
+   * - rollback.restore
+     - 恢复到指定 checkpoint（支持 file_path 单文件回滚）
+     - 快速
+   * - rollback.diff
+     - 查看 checkpoint 的 diff（含渲染后的 inline diff）
+     - 快速
+
+Advanced（高级功能）— 4 个方法
+--------------------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 52 20
+
+   * - 方法名
+     - 功能
+     - 阻塞性
+   * - browser.manage
+     - 管理浏览器 CDP 连接（status/connect/disconnect）
+     - 快速
+   * - cron.manage
+     - 管理定时任务（list/add/remove/pause/resume）
+     - 快速
+   * - skills.manage
+     - 管理 Skill（list/search/install/browse/inspect）
+     - 快速
+   * - slash.exec
+     - 在 SlashWorker 子进程中执行 slash 命令（含副作用镜像）
+     - **长时**
 
 阻塞式提示机制
 ================
@@ -529,6 +670,7 @@ _block() 函数
    :caption: _block() 阻塞提示机制
 
    sequenceDiagram
+       autonumber
        participant Agent as Agent 线程
        participant Block as _block()
        participant TUI as TUI 前端
@@ -604,6 +746,9 @@ _pending 字典结构
 - ``sudo.respond`` → key = "password"
 - ``secret.respond`` → key = "value"
 
+``approval.respond`` 是独立实现的——它不使用 ``_pending/_answers`` 机制，
+而是调用 ``tools.approval.resolve_gateway_approval()`` 直接解析审批结果。
+
 会话内存管理
 ==============
 
@@ -619,7 +764,7 @@ Gateway 的所有会话状态存储在 ``_sessions`` 字典中：
 
 每个会话字典包含：
 
-.. list-table: 会话字典字段
+.. list-table:: 会话字典字段
    :header-rows: 1
    :widths: 25 25 50
 
@@ -782,6 +927,8 @@ busy-state 守卫
 - ``session.undo`` ：运行中拒绝执行（"session busy — /interrupt first"）
 - ``session.compress`` ：同上
 - ``config.set("model")`` ：运行中拒绝切换模型
+- ``rollback.restore`` （完整历史回滚时）：运行中拒绝执行
+- ``slash.exec`` 中的 ``/model`` / ``/personality`` / ``/prompt`` / ``/compress`` ：运行中拒绝执行
 
 SlashWorker 子进程
 ====================
@@ -804,6 +951,20 @@ Gateway 中许多 slash 命令需要访问完整的 CLI 环境（配置、工具
                argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                text=True, bufsize=1,
            )
+
+``slash_worker.py`` 的入口逻辑非常简洁——它创建一个 ``HermesCLI`` 实例，
+然后进入 stdin 循环逐行读取 JSON 请求，调用 ``cli.process_command()`` 处理，
+将输出捕获为 JSON 响应写入 stdout：
+
+.. code-block:: python
+
+   # slash_worker.py 核心循环
+   cli = HermesCLI(model=args.model or None, compact=True, resume=args.session_key, verbose=False)
+
+   for raw in sys.stdin:
+       req = json.loads(raw.strip())
+       out = _run(cli, req.get("command", ""))
+       sys.stdout.write(json.dumps({"id": rid, "ok": True, "output": out}) + "\n")
 
 通信协议
 ----------
@@ -894,7 +1055,9 @@ Agent 回调系统
        return dict(
            tool_start_callback=lambda tc_id, name, args: _on_tool_start(sid, tc_id, name, args),
            tool_complete_callback=lambda tc_id, name, args, result: _on_tool_complete(sid, tc_id, name, args, result),
-           tool_progress_callback=lambda event_type, **kwargs: _on_tool_progress(sid, event_type, **kwargs),
+           tool_progress_callback=lambda event_type, name=None, preview=None, args=None, **kwargs: _on_tool_progress(
+               sid, event_type, name, preview, args, **kwargs
+           ),
            tool_gen_callback=lambda name: _emit("tool.generating", sid, {"name": name}),
            thinking_callback=lambda text: _emit("thinking.delta", sid, {"text": text}),
            reasoning_callback=lambda text: _emit("reasoning.delta", sid, {"text": text}),
@@ -928,6 +1091,15 @@ tool_start / tool_complete
 3. 渲染内联 diff（如果有 ``LocalEditSnapshot``）
 4. 推送 ``tool.complete`` 事件，携带 duration、summary、inline_diff
 
+tool_progress 回调
+--------------------
+
+``tool_progress_callback`` 处理多种进度事件：
+
+- ``tool.started`` ：推送 ``tool.progress`` 事件（工具名称 + 预览）
+- ``reasoning.available`` ：推送推理可用性通知
+- ``subagent.*`` ：推送子 Agent 的状态更新（goal、task_count、task_index、summary、duration）
+
 thinking / reasoning
 ----------------------
 
@@ -955,8 +1127,8 @@ Agent 线程被阻塞，直到 TUI 前端发送 ``clarify.respond`` 。
 
 额外的回调通过 ``_wire_callbacks()`` 注册：
 
-- **sudo 密码** ：通过 ``_block("sudo.request")`` 实现
-- **secret 捕获** ：通过 ``_block("secret.request")`` 实现，存储后返回确认
+- **sudo 密码** ：通过 ``_block("sudo.request", sid, {}, timeout=120)``
+- **secret 捕获** ：通过 ``_block("secret.request", sid, pl)`` ，存储后返回确认
 
 消息队列与 busy→false 转换
 =============================
@@ -992,7 +1164,7 @@ Gateway 的事件推送遵循以下顺序：
 3. ``tool.start`` → ``tool.complete`` — 工具调用（多轮）
 4. ``tool.progress`` — 工具进度更新（可选）
 5. ``message.delta`` — 响应文本（多个，流式）
-6. ``message.complete`` — 对话完成（包含 usage 和 status）
+6. ``message.complete`` — 对话完成（包含 usage、status、rendered）
 
 TUI 前端可以依赖这个顺序来正确渲染对话界面。
 
@@ -1048,98 +1220,167 @@ Gateway 注册了 atexit 处理器来清理所有 SlashWorker：
 
    atexit.register(lambda: _pool.shutdown(wait=False, cancel_futures=True))
 
-Platform Registry：集中式平台管理
-===================================
+Platform 适配器基类
+====================
 
-随着 Gateway 支持的前端平台越来越多（TUI、CLI、Telegram、Signal、微信/元宝、Microsoft Teams、
-Open WebUI 等），需要一个统一的机制来注册、发现和管理这些平台。``gateway/platform_registry.py``
-（约 212 行）提供了这个集中管理能力。
+Gateway 支持多种前端平台（Telegram、Discord、Slack、Signal、Matrix、微信、飞书、
+钉钉、WhatsApp、Home Assistant 等 20+ 个），每个平台通过继承
+``BasePlatformAdapter``（``gateway/platforms/base.py``）实现适配。
 
-注册与发现
------------
+BasePlatformAdapter 接口
+--------------------------
 
-每个平台通过 ``PlatformRegistry`` 注册自身，包含平台名称、消息回调、生命周期钩子等：
-
-.. code-block:: python
-
-   # 平台注册的核心接口
-   class PlatformRegistry:
-       def register(self, platform: Platform) -> None: ...
-       def get(self, name: str) -> Platform | None: ...
-       def list_platforms(self) -> list[str]: ...
-       def broadcast(self, event: dict) -> None: ...
-
-注册后的平台可以在运行时被动态发现，Gateway 的事件推送系统会将事件广播到所有已注册平台。
-
-平台生命周期
---------------
-
-Platform Registry 管理平台的完整生命周期：
-
-1. **注册阶段** ：平台模块加载时向 Registry 注册自身
-2. **初始化阶段** ：Gateway 启动时调用各平台的初始化钩子
-3. **运行阶段** ：通过统一的消息路由接收和发送消息
-4. **清理阶段** ：Gateway 关闭时调用各平台的清理钩子
-
-这种设计使得新增平台只需实现 ``Platform`` 接口并注册即可，无需修改 Gateway 核心代码。
-
-新平台集成
-===========
-
-Gateway 近期新增了多个平台支持，每个平台都有其独特的通信模式和交互方式。
-
-Microsoft Teams：线程式消息
-----------------------------
-
-Teams 集成通过 ``gateway/platforms/teams.py`` 实现，利用 Microsoft Bot Framework 接收和发送消息。
-Teams 的核心特点是 **线程式对话** ：每一轮 Agent 交互在同一个消息线程中进行。
+基类定义了所有平台必须实现的核心接口：
 
 .. code-block:: python
 
-   # Teams 平台使用 app.reply() 进行线程回复
-   async def handle_message(self, activity):
-       # 在同一个线程中回复，保持对话上下文
-       await app.reply(activity, response)
+   class BasePlatformAdapter(ABC):
+       @abstractmethod
+       async def connect(self) -> bool: ...
+       @abstractmethod
+       async def disconnect(self) -> None: ...
+       @abstractmethod
+       async def send(self, chat_id: str, content: str, ...) -> SendResult: ...
+       @abstractmethod
+       async def get_chat_info(self, chat_id: str) -> Dict[str, Any]: ...
 
-线程回复确保了 Teams 中的对话不会散落到多个独立消息中，用户可以在 Teams 的原生线程 UI 中
-浏览完整的 Agent 交互历史。
+并提供了丰富的默认实现：
 
-Telegram DM：Topic 模式的多会话
----------------------------------
+- **媒体发送** ：``send_image()`` / ``send_voice()`` / ``send_video()`` / ``send_document()`` — 默认以文本降级，子类覆盖原生发送
+- **消息编辑** ：``edit_message()`` — 用于流式更新，支持 ``finalize`` 标志
+- **消息分块** ：``truncate_message()`` — 自动按平台长度限制分块，保持代码块完整性
+- **媒体提取** ：``extract_images()`` / ``extract_media()`` / ``extract_local_files()`` — 从响应文本中提取多媒体附件
+- **重试机制** ：``_send_with_retry()`` — 指数退避重试 + 纯文本降级
+- **Typing 指示器** ：``_keep_typing()`` — 持续刷新 typing 状态，支持暂停（审批等待时）
+- **图片缓存** ：``cache_image_from_url()`` / ``cache_image_from_bytes()`` — SSRF 安全的图片下载与本地缓存
+- **音频缓存** ：``cache_audio_from_url()`` / ``cache_audio_from_bytes()`` — 语音消息的本地缓存
+- **文档缓存** ：``cache_document_from_url()`` — 支持 PDF/DOCX/XLSX 等格式
+- **代理支持** ：``resolve_proxy_url()`` — 自动检测 HTTPS_PROXY/HTTP_PROXY 及 macOS 系统代理
 
-Telegram 集成引入了 **DM Topic 模式** ，允许用户在单个私聊对话中通过 Topic 功能
-创建多个独立的 Agent 会话：
-
-- ``/topic`` 命令创建新的话题（Topic），每个 Topic 对应一个独立的 Agent 会话
-- 不同 Topic 之间的对话历史完全隔离
-- 用户可以在 Telegram 的 Topic 切换 UI 中快速在不同任务上下文之间切换
-- 适用于需要同时处理多个独立任务的场景（如一边写代码一边查文档）
-
-元宝平台
----------
-
-元宝（Yuanbao）是腾讯旗下的大型 AI 对话平台。Gateway 的元宝集成（约 7000 行）是一个
-大规模的平台适配器，支持：
-
-- 元宝特有的消息格式和 API 协议
-- 富媒体内容（图片、文件）的收发
-- 会话状态的跨平台同步
-
-Signal 速率限制
+消息处理流水线
 -----------------
 
-Signal 平台的集成增加了专用的速率限制模块 ``gateway/platforms/signal_rate_limit.py``。
-Signal API 对消息发送有严格的频率限制，该模块实现：
+``handle_message()`` 是平台适配器的核心方法，它实现了完整的异步消息处理生命周期：
 
-- 令牌桶（Token Bucket）算法控制发送速率
-- 队列缓冲：超出速率限制的消息进入等待队列
-- 优雅降级：在极端情况下丢弃低优先级消息而非触发 API 错误
+.. mermaid::
+   :name: platform-handle-message
+   :caption: 平台适配器消息处理流水线
 
-API Server 增强
-=================
+   sequenceDiagram
+       autonumber
+       participant P as 平台适配器
+       participant HM as handle_message()
+       participant PM as _process_message_background()
+       participant Agent as AIAgent
 
-API Server 是 Gateway 的 HTTP/SSE 接口层，为 Open WebUI 等第三方前端提供 Agent 访问能力。
-近期的两个重要增强显著提升了其实用性。
+       P->>HM: MessageEvent
+       HM->>HM: 检查 _active_sessions
+
+       alt 已有活跃会话
+           alt 紧急命令 (/approve, /stop)
+               HM->>PM: 直接调度
+           else 图片突发
+               HM->>HM: 合并到 _pending_messages
+           else 普通消息
+               HM->>HM: 触发 interrupt
+               HM->>HM: 排入 _pending_messages
+           end
+       else 无活跃会话
+           HM->>HM: 设置 _active_sessions guard
+           HM->>PM: 创建后台 asyncio.Task
+       end
+
+       PM->>PM: 启动 _keep_typing
+       PM->>Agent: _message_handler(event)
+       Agent-->>PM: response text
+       PM->>PM: extract_media / extract_images
+       PM->>P: _send_with_retry (text + media)
+       PM->>PM: 检查 _pending_messages
+       PM->>PM: 清理 _active_sessions
+
+平台注册与生命周期
+--------------------
+
+所有平台适配器位于 ``gateway/platforms/`` 目录中。当前支持的平台：
+
+- ``telegram.py`` — Telegram DM / Group / Topic
+- ``discord.py`` — Discord（线程式对话）
+- ``slack.py`` — Slack（Assistant API + thread replies）
+- ``signal.py`` — Signal
+- ``matrix.py`` — Matrix
+- ``whatsapp.py`` — WhatsApp
+- ``weixin.py`` — 微信/元宝
+- ``wecom.py`` — 企业微信
+- ``feishu.py`` — 飞书
+- ``dingtalk.py`` — 钉钉
+- ``homeassistant.py`` — Home Assistant
+- ``email.py`` — Email
+- ``sms.py`` — SMS
+- ``webhook.py`` — 通用 Webhook
+- ``bluebubbles.py`` — BlueBubbles (iMessage)
+- ``mattermost.py`` — Mattermost
+- ``qqbot/`` — QQ Bot
+- ``api_server.py`` — HTTP/SSE API Server（Open WebUI 兼容）
+
+Stream Consumer：Agent 输出流处理
+===================================
+
+``gateway/stream_consumer.py`` 负责处理 Agent 的输出流——将 Agent 产生的
+原始 token 流转换为结构化的事件，推送给前端平台。
+
+.. mermaid::
+   :name: stream-consumer-pipeline
+   :caption: Stream Consumer 处理流水线
+
+   flowchart LR
+       AGENT["AIAgent<br/>输出流"] --> SC["GatewayStreamConsumer"]
+       SC --> PARSE["Token 解析"]
+       PARSE --> BATCH["批次聚合"]
+       BATCH --> DISPATCH["平台分发"]
+
+       DISPATCH --> TUI["TUI 前端"]
+       DISPATCH --> API["API Server<br/>(SSE)"]
+       DISPATCH --> TG["Telegram"]
+       DISPATCH --> DISC["Discord"]
+       DISPATCH --> SLACK["Slack"]
+
+核心设计
+---------
+
+``GatewayStreamConsumer`` 使用 **edit transport** 模式：
+先发送一条初始消息，然后通过 ``editMessageText`` 持续更新内容。
+这在 Telegram、Discord、Slack 等平台上是普遍支持的。
+
+Stream Consumer 的核心配置：
+
+.. code-block:: python
+
+   @dataclass
+   class StreamConsumerConfig:
+       edit_interval: float = 1.0    # 编辑间隔（秒）
+       buffer_threshold: int = 40    # 缓冲区触发阈值（字符数）
+       cursor: str = " ▉"            # 流式光标字符
+       buffer_only: bool = False     # 仅缓冲模式
+
+核心职责
+---------
+
+Stream Consumer 承担以下核心职责：
+
+1. **Token 流消费** ：从 Agent 的输出迭代器中逐个读取 token
+2. **事件分类** ：区分文本 token、工具调用、思维过程、错误等不同类型
+3. **批次聚合** ：将小 token 合并为适合网络传输的批次
+4. **平台分发** ：将处理后的事件推送到目标平台适配器
+5. **分段处理** ：工具调用边界触发新消息段（``_NEW_SEGMENT``），确保后续文本出现在工具进度消息下方
+
+Stream Consumer 的设计将 Agent 的输出逻辑与平台的推送逻辑解耦——Agent 只需产生 token 流，
+Stream Consumer 负责将其适配到不同平台的推送协议。
+
+API Server：HTTP/SSE 接口
+===========================
+
+API Server（``gateway/platforms/api_server.py``）是 Gateway 的 HTTP/SSE 接口层，
+为 Open WebUI 等第三方前端提供 Agent 访问能力。
 
 X-Hermes-Session-Key：长期记忆作用域
 --------------------------------------
@@ -1163,21 +1404,13 @@ X-Hermes-Session-Key：长期记忆作用域
 这个特性使得 Open WebUI 等前端可以为每个用户维护独立的长期对话上下文，
 而不仅仅是单次请求-响应的无状态交互。
 
-SSE 流式输出优化
-------------------
+SSE 流式输出
+--------------
 
-针对 Open WebUI 的 SSE（Server-Sent Events）流式输出进行了两项优化：
+针对 Open WebUI 的 SSE（Server-Sent Events）流式输出进行了优化：
 
-**Token 批处理** ：将连续的小 token 合并为较大的批次再发送，减少 SSE 事件数量和网络开销：
-
-.. code-block:: python
-
-   # Token 批处理策略
-   # - 短时间内连续到达的 token 合并为一个 SSE 事件
-   # - 超过批处理窗口（如 50ms）的 token 立即发送
-   # - 遇到句号、换行等自然断点时立即发送
-
-**错误处理增强** ：在 SSE 流中增加结构化的错误事件，使前端能优雅地处理 Agent 异常：
+- **Token 批处理** ：将连续的小 token 合并为较大的批次再发送，减少 SSE 事件数量和网络开销
+- **错误处理** ：在 SSE 流中增加结构化的错误事件，使前端能优雅地处理 Agent 异常
 
 .. code-block::
 
@@ -1185,112 +1418,21 @@ SSE 流式输出优化
 
    data: [DONE]
 
-这比简单地断开 SSE 连接提供了更好的用户体验，前端可以向用户展示有意义的错误信息。
-
-Stream Consumer：Agent 输出流处理
-===================================
-
-``gateway/stream_consumer.py``（约 145 行）负责处理 Agent 的输出流——将 Agent 产生的
-原始 token 流转换为结构化的事件，推送给前端平台。
-
-.. mermaid::
-   :name: stream-consumer-pipeline
-   :caption: Stream Consumer 处理流水线
-
-   flowchart LR
-       AGENT["AIAgent<br/>输出流"] --> SC["StreamConsumer"]
-       SC --> PARSE["Token 解析"]
-       PARSE --> BATCH["批次聚合"]
-       BATCH --> DISPATCH["平台分发"]
-
-       DISPATCH --> TUI["TUI 前端"]
-       DISPATCH --> API["API Server<br/>(SSE)"]
-       DISPATCH --> TG["Telegram"]
-       DISPATCH --> TEAMS["Teams"]
-
-核心职责
----------
-
-Stream Consumer 承担以下核心职责：
-
-1. **Token 流消费** ：从 Agent 的输出迭代器中逐个读取 token
-2. **事件分类** ：区分文本 token、工具调用、思维过程、错误等不同类型
-3. **批次聚合** ：将小 token 合并为适合网络传输的批次
-4. **平台分发** ：将处理后的事件推送到所有已注册的平台（通过 Platform Registry）
-5. **完成通知** ：在 Agent 输出结束时发送 ``message.complete`` 事件
-
-Stream Consumer 的设计将 Agent 的输出逻辑与平台的推送逻辑解耦——Agent 只需产生 token 流，
-Stream Consumer 负责将其适配到不同平台的推送协议。
-
-运行时页脚
-============
-
-``gateway/runtime_footer.py``（约 150 行）负责生成 Agent 响应末尾的运行时统计信息。
-当 Agent 完成一次对话后，页脚会在消息末尾附加关键的运行指标：
-
-- **Token 使用量** ：输入/输出 token 数、缓存命中率
-- **执行耗时** ：总耗时、首 token 延迟（TTFT）
-- **工具调用统计** ：调用了哪些工具、各工具的耗时
-- **模型信息** ：使用的模型名称、Provider
-
-页脚的信息会根据不同平台的展示能力进行裁剪——TUI 前端可以渲染丰富的格式化输出，
-而 Telegram 等文本平台则使用精简的 Markdown 格式。
-
-看板 Gateway 集成
-===================
-
-看板（Kanban）任务系统与 Gateway 深度集成，通过 ``plugins/kanban/`` 提供了一个完整的
-任务管理前端，直接在 Agent 对话界面中管理异步任务。
-
-Dispatcher 服务
------------------
-
-看板通过一个独立的 **Dispatcher 服务** （``hermes-kanban-dispatcher.service``）运行，
-负责：
-
-- 监听看板任务队列，将待执行任务分配给 Agent
-- 管理并发任务数量，防止资源过载
-- 与 Gateway 的会话系统集成，每个看板任务对应一个独立会话
-
-.. code-block:: yaml
-
-   # kanban 配置示例
-   kanban:
-     max_spawn: 3        # 最大并发任务数
-     dashboard: true      # 启用 Web Dashboard
-     auto_assign: true    # 自动分配待执行任务
-
-``kanban.max_spawn`` 参数控制同时运行的最大 Agent 任务数。当活跃任务达到上限时，
-新任务进入等待队列，直到有任务完成释放槽位。
-
-Dashboard WebSocket
---------------------
-
-看板 Dashboard 通过 WebSocket 连接实现实时更新：
-
-- 任务状态变更（待执行 → 运行中 → 完成/失败）实时推送到前端
-- Agent 的流式输出可以在 Dashboard 中实时预览
-- 支持任务的暂停、恢复和取消操作
-
-Dashboard 通过 Gateway 的 WebSocket 通道与 Agent 交互，复用了 Gateway 的会话管理和
-事件推送基础设施，避免了重复的通信层建设。
-
 源码文件索引
 ==============
 
 本章涉及的主要源文件：
 
 - ``tui_gateway/entry.py`` — Gateway 入口点，stdin 读取循环，信号处理，初始化握手
-- ``tui_gateway/server.py`` — 38 个 RPC 方法定义，会话管理，阻塞提示，SlashWorker，回调系统
+- ``tui_gateway/server.py`` — 56 个 RPC 方法定义（3086 行），会话管理，阻塞提示，SlashWorker，回调系统
 - ``tui_gateway/render.py`` — 流式渲染器，消息渲染，diff 渲染
-- ``tui_gateway/slash_worker.py`` — SlashWorker 子进程入口
-- ``gateway/platform_registry.py`` — 集中式平台注册与管理（212 行）
-- ``gateway/stream_consumer.py`` — Agent 输出流消费者，token 批处理与平台分发（145 行）
-- ``gateway/runtime_footer.py`` — 运行时页脚，token 使用量与耗时统计（150 行）
-- ``gateway/config.py`` — Gateway 配置管理，平台配置加载
-- ``gateway/platforms/teams.py`` — Microsoft Teams 平台适配器（线程式消息）
+- ``tui_gateway/slash_worker.py`` — SlashWorker 子进程入口（77 行）
+- ``gateway/platforms/base.py`` — 平台适配器基类（2343 行），消息处理流水线，媒体缓存，重试机制
+- ``gateway/stream_consumer.py`` — Agent 输出流消费者，edit transport，token 批处理与平台分发
 - ``gateway/platforms/api_server.py`` — HTTP/SSE API Server，X-Hermes-Session-Key 支持
-- ``gateway/platforms/signal_rate_limit.py`` — Signal 平台速率限制（令牌桶算法）
-- ``plugins/kanban/`` — 看板任务系统，Dispatcher 服务，Dashboard WebSocket
-- ``hermes_cli/commands.py`` — 命令注册表（被 Gateway 的补全和命令分发方法使用）
-- ``hermes_cli/skin_engine.py`` — 皮肤引擎（被 Gateway 的 ``resolve_skin()`` 使用）
+- ``gateway/platforms/telegram.py`` — Telegram 平台适配器
+- ``gateway/platforms/discord.py`` — Discord 平台适配器
+- ``gateway/platforms/slack.py`` — Slack 平台适配器
+- ``gateway/config.py`` — Gateway 配置管理，Platform/PlatformConfig 数据类
+- ``gateway/session.py`` — 会话键构建，SessionSource 数据类
+- ``gateway/status.py`` — 运行时状态写入，作用域锁管理

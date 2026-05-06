@@ -77,6 +77,8 @@
 ^^^^^^
 
 .. mermaid::
+   :name: agent-class-diagram
+   :caption: AIAgent 核心类与依赖关系
 
    classDiagram
        class AIAgent {
@@ -94,38 +96,40 @@
            -_execute_tool_calls()
            -_spawn_background_review()
        }
-   
+
        class IterationBudget {
            +max_total: int
            +consume() bool
            +refund()
            +remaining: int
        }
-   
+
        class ContextCompressor {
            +threshold_tokens: int
            +context_length: int
            +should_compress() bool
            +update_from_response()
        }
-   
+
        class ToolRegistry {
            +register()
            +dispatch() str
            +get_definitions() list
            +get_all_tool_names() list
+           <<interface>>
        }
-   
+
        class ErrorClassifier {
            +classify_api_error() ClassifiedError
+           <<interface>>
        }
-   
+
        class SessionDB {
            +update_token_counts()
            +update_system_prompt()
            +get_session() dict
        }
-   
+
        AIAgent *-- IterationBudget
        AIAgent *-- ContextCompressor
        AIAgent --> ToolRegistry : uses
@@ -193,6 +197,8 @@
 ~~~~~~~~~~~~~~
 
 .. mermaid::
+   :name: run-conversation-sequence
+   :caption: run_conversation() 完整时序图
 
    sequenceDiagram
        autonumber
@@ -435,37 +441,47 @@ OpenAI 的流式响应中，工具调用的 ``delta`` 对象包含 ``function.na
 ^^^^^^^^^^^^^^
 
 .. mermaid::
+   :name: streaming-dataflow
+   :caption: 流式数据流图
 
-   graph TD
+   flowchart TD
        API["LLM API<br/>(SSE Stream)"]
-   
+
        subgraph "流式累积器"
            TEXT_BUF["文本缓冲区<br/>delta.content"]
            TC_BUF["工具调用缓冲区<br/>delta.tool_calls"]
            THINK_BUF["思考缓冲区<br/>delta.reasoning_content"]
        end
-   
+
        subgraph "回调分发"
            STREAM_CB["stream_delta_callback<br/>→ TTS / CLI 显示"]
            THINK_CB["thinking_callback<br/>→ 思考动画"]
            REASON_CB["reasoning_callback<br/>→ 推理展示"]
        end
-   
+
        RESULT["统一 Response<br/>(SimpleNamespace)"]
-   
+
        API -->|"delta.content"| TEXT_BUF
        API -->|"delta.tool_calls"| TC_BUF
        API -->|"delta.reasoning"| THINK_BUF
-   
+
        TEXT_BUF --> STREAM_CB
        THINK_BUF --> THINK_CB
        THINK_BUF --> REASON_CB
-   
+
        TEXT_BUF -->|"流结束"| RESULT
        TC_BUF -->|"流结束"| RESULT
        THINK_BUF -->|"流结束"| RESULT
-   
+
        STREAM_CB -->|"None 信号"| DISPLAY["关闭响应框"]
+
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       class API start
+       class TEXT_BUF,TC_BUF,THINK_BUF info
+       class STREAM_CB,THINK_CB,REASON_CB,DISPLAY info
+       class RESULT success
 
 一个关键的流式处理细节是 **stale stream 检测** ：Hermes 维护了一个 90 秒的
 陈旧流检测器。如果在 90 秒内没有收到任何新的 chunk，就认为连接已经僵死，
@@ -479,37 +495,13 @@ OpenAI 的流式响应中，工具调用的 ``delta`` 对象包含 ``function.na
 单位到达，一个 ``<thinking>`` 标签可能跨越多个 chunk（例如第一个 chunk 收到
 ``<thi`` ，第二个收到 ``nking>`` ），简单的正则匹配无法处理这种部分匹配。
 
-``agent/think_scrubber.py`` 实现了一个 **有状态的流式 scrubber** 来解决这一问题。
-它维护一个跨 chunk 的状态机：
+``_strip_think_blocks()`` 函数用于已完成字符串的最终清理（如 ``final_response`` 、
+会话重放、压缩输入），通过正则匹配已知的推理标签（``<thinking>`` 、``<reasoning>`` 、
+``<REASONING_SCRATCHPAD>`` 等）移除完整的推理块。
 
-- **空闲状态（Idle）** ：正常透传所有内容
-- **潜在匹配状态（Potential Match）** ：检测到 ``<`` 开头，开始缓冲并逐字符匹配
-  已知标签模式（``<thinking>`` 、``<reasoning>`` 、``<REASONING_SCRATCHPAD>`` 等）
-- **确认泄漏状态（Confirmed Leak）** ：完整标签匹配成功，开始吞没内容直到闭合标签
-- **部分匹配回退** ：如果缓冲的字符最终不匹配任何已知标签，将缓冲内容释放回输出流
-
-这个 scrubber 在每轮对话开始时重置（``reset_at_turn_start``），在流结束时
-刷新残留缓冲（``flush_at_turn_end``），确保正常的 ``<`` 字符不会被误吞。
-
-::
-
-    # 简化的状态机示意
-    class ThinkScrubber:
-        def feed(self, chunk: str) -> str:
-            """输入一个 chunk，返回清理后的可见内容。"""
-            # 1. 将 chunk 追加到内部缓冲
-            # 2. 逐字符扫描，匹配已知标签模式
-            # 3. 匹配成功：进入吞没模式，返回空字符串
-            # 4. 匹配失败：释放缓冲，返回正常内容
-            # 5. 吞没模式中：检测闭合标签，退出吞没
-
-端到端验证场景（来自 issue #17924）：模型输出 "Let me check..." 时，
-``<thinking>`` 块的泄漏导致用户看到 " me check..." ——首词被截断。
-Scrubber 通过精确的标签边界检测解决了这一问题，同时保留了标签之后的正常内容。
-
-需要注意的是，``_strip_think_blocks()`` 仍然用于已完成字符串的最终清理
-（如 ``final_response`` 、会话重放、压缩输入），而 scrubber 仅用于流式
-逐 chunk 的实时防护。两者互补，共同确保推理内容不会泄漏到用户界面。
+在流式输出场景中，模型的内部推理内容可能以 chunk 为单位泄漏到用户可见的输出流中。
+由于推理标签可能跨越多个 chunk 到达，系统在处理时需要考虑部分匹配的情况，
+确保正常的 ``<`` 字符不会被误处理，同时保证推理内容不会泄漏到用户界面。
 
 为什么 Hermes 不使用 async/await？
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -539,10 +531,10 @@ Hermes 的主循环是纯同步代码（使用 ``time.sleep()`` 而非 ``await a
 第四节：错误分类与恢复
 ------------------------
 
-11 种 FailoverReason
+14 种 FailoverReason
 ~~~~~~~~~~~~~~~~~~~~~~
 
-Hermes 的错误分类系统（``agent/error_classifier.py``）定义了 16 种错误原因。
+Hermes 的错误分类系统（``agent/error_classifier.py``）定义了 14 种错误原因。
 每种错误对应不同的恢复策略：
 
 .. list-table::
@@ -616,28 +608,39 @@ Hermes 的错误分类系统（``agent/error_classifier.py``）定义了 16 种�
 ``classify_api_error()`` 函数实现了一个**优先级管道** ：
 
 .. mermaid::
+   :name: error-classification-pipeline
+   :caption: 错误分类管道
 
-   graph TD
+   flowchart TD
        ERR["异常对象"] --> EX["提取 HTTP 状态码<br/>+ 错误体 + 消息"]
-   
+
        EX --> P1["1. 特殊提供商模式<br/>thinking_signature / long_context_tier"]
        P1 -->|匹配| RESULT["返回 ClassifiedError"]
        P1 -->|不匹配| P2["2. HTTP 状态码分类<br/>401/402/404/429/500/..."]
-   
+
        P2 -->|匹配| RESULT
        P2 -->|不匹配| P3["3. 结构化错误码<br/>resource_exhausted / insufficient_quota"]
-   
+
        P3 -->|匹配| RESULT
        P3 -->|不匹配| P4["4. 消息模式匹配<br/>billing / rate_limit / context / auth"]
-   
+
        P4 -->|匹配| RESULT
        P4 -->|不匹配| P5["5. 传输错误启发式<br/>timeout / connection"]
-   
+
        P5 -->|匹配| RESULT
        P5 -->|不匹配| P6["6. 服务器断连 + 大会话<br/>→ context_overflow"]
        P6 -->|匹配| RESULT
        P6 -->|不匹配| P7["7. 兜底: unknown<br/>(retryable with backoff)"]
        P7 --> RESULT
+
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+       class ERR fail
+       class EX info
+       class P1,P2,P3,P4,P5,P6,P7 warn
+       class RESULT success
 
 这个管道的优先级顺序经过精心设计：
 
@@ -719,8 +722,10 @@ jitter 的种子使用 ``time.time_ns() ^ (counter * 0x9E3779B9)`` 来保证
 决策逻辑位于 ``_should_parallelize_tool_batch()`` 函数（第 267 行）：
 
 .. mermaid::
+   :name: parallel-vs-sequential
+   :caption: 并行 vs 顺序执行决策
 
-   graph TD
+   flowchart TD
        START["工具调用批次"] --> CHECK1{"只有 1 个调用?"}
        CHECK1 -->|是| SEQ["顺序执行"]
        CHECK1 -->|否| CHECK2{"包含交互式工具?<br/>(clarify)"}
@@ -730,9 +735,19 @@ jitter 的种子使用 ``time.time_ns() ^ (counter * 0x9E3779B9)`` 来保证
        CHECK3 -->|是| CHECK4{"路径有重叠?"}
        CHECK4 -->|是| SEQ
        CHECK4 -->|否| PAR["并行执行<br/>(ThreadPoolExecutor)"]
-   
+
        SEQ --> RESULT["追加结果到 messages"]
        PAR --> RESULT
+
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+       class START start
+       class CHECK1,CHECK2,CHECK3,CHECK4 warn
+       class SEQ info
+       class PAR success
+       class RESULT success
 
 具体的并行安全判定规则：
 
@@ -792,8 +807,11 @@ Agent 循环拦截工具
 工具调用的完整路径：
 
 .. mermaid::
+   :name: invoke-tool-sequence
+   :caption: _invoke_tool 完整调用链
 
    sequenceDiagram
+       autonumber
        participant MainLoop as AgentLoop
        participant IT as invoke_tool
        participant Plugin as PluginHook
@@ -802,7 +820,7 @@ Agent 循环拦截工具
        participant Coerce as coerce_args
        participant Dispatch as registry.dispatch
        participant Handler as ToolHandler
-   
+
        MainLoop->>IT: function_name + function_args
        IT->>Plugin: pre_tool_call hook
        Plugin-->>IT: block_message or None

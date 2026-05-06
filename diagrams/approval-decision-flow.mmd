@@ -28,12 +28,11 @@ flowchart TD
     J5 -->|是| J6[自动批准执行]
     J5 -->|否| J7[提示用户审批 → 同 manual 流程]
 
-    style C fill:#c8e6c9
-    style D2 fill:#c8e6c9
-    style J2 fill:#c8e6c9
-    style F fill:#c8e6c9
-    style G fill:#c8e6c9
-    style H fill:#c8e6c9
-    style J6 fill:#c8e6c9
-    style I fill:#ffcdd2
-    style J7 fill:#fff9c4
+    classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+    classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+    class C,D2,J2,F,G,H,J6 success
+    class I fail
+    class J7 warn

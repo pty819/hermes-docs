@@ -20,6 +20,7 @@ Hermes Agent 架构深度解析
    chapters/plugin-system
    chapters/skill-system
    chapters/security
+   chapters/kanban
    chapters/part2/index
    chapters/lessons
    chapters/build-your-own

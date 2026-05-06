@@ -37,11 +37,12 @@ This generates `scripts/changes-summary.md` listing all commits since the last s
 | Session state | `chapters/session-state.rst` | Session persistence, state management |
 | Skill system | `chapters/skill-system.rst` | Skill registration, invocation |
 | Tool system | `chapters/tool-system.rst` | Tool definitions, dispatch |
+| Kanban | `chapters/kanban.rst` | `hermes_cli/kanban.py`, `kanban_db.py`, `tools/kanban_tools.py`, `plugins/kanban/` |
 
 ## Build locally
 
 ```bash
-pip install sphinx==8.2.3 sphinx-rtd-theme==3.0.2 sphinxcontrib-mermaid==1.0.0
+pip install sphinx==8.2.3 sphinx-rtd-theme==3.0.2 sphinxcontrib-mermaid==2.0.2
 sphinx-build -b html . _build/html
 ```
 

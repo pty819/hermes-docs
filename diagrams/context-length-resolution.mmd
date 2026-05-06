@@ -51,14 +51,12 @@ flowchart TD
 
     N -->|No| O[Return DEFAULT_FALLBACK_CONTEXT = 128K]
 
-    style A fill:#e1f5fe
-    style C fill:#c8e6c9
-    style E2 fill:#c8e6c9
-    style G2 fill:#c8e6c9
-    style I7 fill:#c8e6c9
-    style J2 fill:#c8e6c9
-    style K4 fill:#c8e6c9
-    style L2 fill:#c8e6c9
-    style M2 fill:#c8e6c9
-    style N2 fill:#fff9c4
-    style O fill:#ffcdd2
+    classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+    classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+    class A start
+    class C,E2,G2,I7,J2,K4,L2,M2 success
+    class N2 warn
+    class O fail

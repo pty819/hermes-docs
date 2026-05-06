@@ -50,7 +50,7 @@ html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 html_css_files = ["mermaid-book.css"]
 
-mermaid_version = "10.6.1"
+mermaid_version = "11.6.0"
 mermaid_d3_zoom = True
 mermaid_fullscreen = True
 mermaid_fullscreen_button = "⤢"

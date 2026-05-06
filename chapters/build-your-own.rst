@@ -18,14 +18,24 @@
 理解这个 MVA 是理解任何 Agent 系统的基础。
 
 .. mermaid::
+   :name: mva-core-loop
+   :caption: 最小可行 Agent 核心循环
 
-   graph LR
+   flowchart LR
        A["系统提示词"] --> B["API 调用"]
        C["用户消息"] --> B
        B --> D{"有工具调用?"}
        D -->|是| E["执行工具"]
        E --> B
        D -->|否| F["返回响应"]
+
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       class A,C start
+       class D warn
+       class E success
+       class F success
 
 完整代码如下：
 
@@ -259,8 +269,10 @@
 ~~~~~~~~~~~~~~~~
 
 .. mermaid::
+   :name: monolith-vs-microservice
+   :caption: 单块 vs 微服务架构选型
 
-   graph TD
+   flowchart TD
        Q{"单块还是微服务?"}
        Q -->|"单用户 / 小团队"| M["单块架构<br/>Hermes 的选择"]
        Q -->|"多租户 / 大规模"| S["微服务架构"]
@@ -268,6 +280,15 @@
        M --> M2["缺点：单点故障<br/>难以水平扩展"]
        S --> S1["优点：独立扩展<br/>故障隔离<br/>技术异构"]
        S --> S2["缺点：运维复杂<br/>网络延迟<br/>分布式事务"]
+
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+       class Q warn
+       class M,S info
+       class M1,S1 success
+       class M2,S2 fail
 
 **Hermes 的选择** ：单块架构（monolith）。整个 Agent 运行在单个进程中。
 
@@ -606,11 +627,20 @@ Hermes 同时支持 CLI 模式（直接在终端运行）和网关模式
 Hermes 的 TUI 网关使用了一个精巧的进程隔离模式来处理斜杠命令：
 
 .. mermaid::
+   :name: slash-worker-isolation
+   :caption: SlashWorker 进程隔离模式
 
-   graph LR
+   flowchart LR
        A["TUI 网关<br/>(主进程)"] -->|"JSON-RPC<br/>via stdin/stdout"| B["SlashWorker<br/>(子进程)"]
        B -->|"持久化<br/>HermesCLI"| C["会话状态"]
        A -->|"直接调用"| D["Agent 核心<br/>(AIAgent)"]
+
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       class A start
+       class B,D info
+       class C success
 
 SlashWorker（``tui_gateway/slash_worker.py``）是一个持久化的子进程，
 负责处理斜杠命令（如 ``/config`` 、``/model`` 、``/tools``）。
@@ -640,8 +670,10 @@ Hermes 的会话持久化策略：
 综合以上所有讨论，以下是一个推荐的生产级 Agent 架构：
 
 .. mermaid::
+   :name: recommended-architecture
+   :caption: 推荐的生产级 Agent 完整架构
 
-   graph TB
+   flowchart TB
        subgraph "用户界面层"
            CLI["CLI / TUI"]
            WEB["Web UI"]
@@ -692,12 +724,26 @@ Hermes 的会话持久化策略：
        LOOP --> DB
        DISPATCH --> FS
 
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       class CLI,WEB,API start
+       class LOOP,BUDGET,ERR warn
+       class REG,DISPATCH,MCP info
+       class COMPRESS,CACHE,MEMORY info
+       class OA,AN,BR,CRED info
+       class DB,FS success
+
 数据流：从用户到 LLM 再回来
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. mermaid::
+   :name: full-data-flow-sequence
+   :caption: 数据流：从用户到 LLM 再回来
 
    sequenceDiagram
+       autonumber
        participant U as 用户
        participant A as Agent Loop
        participant P as Provider Adapter

@@ -42,10 +42,15 @@ flowchart TD
     H1 -->|oauth_*| H4[路由到特定 try 函数]
     H1 -->|external_process| H5[解析外部进程凭证]
 
-    style A fill:#e1f5fe
-    style C fill:#fff3e0
-    style D fill:#e8f5e9
-    style E fill:#fce4ec
-    style F fill:#f3e5f5
-    style G fill:#e0f2f1
-    style H fill:#fff8e1
+    classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+    classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+    class A start
+    class C info
+    class D success
+    class E fail
+    class F info
+    class G warn
+    class H info

@@ -68,6 +68,7 @@ Hermes Agent 的插件系统解决了这一问题。它的设计哲学是：
        }
 
        class PluginContext {
+           <<interface>>
            +manifest: PluginManifest
            +_manager: PluginManager
            +register_tool(name, toolset, schema, handler)
@@ -140,6 +141,7 @@ Pip 入口点插件
 .. mermaid::
 
    sequenceDiagram
+       autonumber
        participant Main as Agent 启动
        participant PM as PluginManager
        participant UserDir as ~/.hermes/plugins/
@@ -272,7 +274,7 @@ register_tool
 
 - ``requires_env`` ：可选的环境变量列表。
 
-- ``is_async`` ：是否异步处理函数（默认 ``False``）。
+- ``is_async`` ：是否异步处理函数（默认 ``False`` ）。
 
 - ``description`` ：工具描述。
 
@@ -447,6 +449,12 @@ Hook 执行机制
 .. mermaid::
 
    flowchart TD
+       classDef start fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+       classDef success fill:#dcfce7,stroke:#16a34a,color:#166534
+       classDef warn fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+       classDef fail fill:#fee2e2,stroke:#dc2626,color:#991b1b
+       classDef info fill:#f1f5f9,stroke:#64748b,color:#334155
+
        EVENT["Agent 事件<br/>(工具调用/LLM调用/...)"] --> INVOKE["invoke_hook(hook_name, **kwargs)"]
 
        INVOKE --> CB1["回调 1<br/>(插件 A)"]
@@ -464,9 +472,10 @@ Hook 执行机制
 
        LOG --> COLLECT
 
-       style EVENT fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
-       style LOG fill:#fee2e2,stroke:#f87171,color:#991b1b
-       style RESULTS fill:#dcfce7,stroke:#34d399,color:#166534
+       class EVENT start
+       class RESULTS success
+       class LOG fail
+       class INVOKE,CB1,CB2,CB3,R1,R3,COLLECT info
 
 ***********************
 内存提供者插件
@@ -581,36 +590,21 @@ Hermes Agent 的内置上下文管理使用 ``ContextCompressor`` 进行上下�
 
 每个插件的加载被独立的 try/except 包裹。如果某个插件的 ``register()`` 函数抛出异常，该插件会被标记为 ``enabled=False`` 并记录错误信息，但不影响其他插件的加载。``list_plugins()`` 方法返回所有插件的状态（包括失败原因），方便调试。
 
-****************************
-模型提供者插件
-****************************
+.. note::
 
-Hermes 将所有 33 个 LLM Provider 以插件形式托管在 ``plugins/model-providers/`` 目录下。
-这是插件系统最大规模的应用——每一个 Provider（Anthropic、Gemini、Bedrock、DeepSeek 等）
-都是一个标准的 Hermes 插件，遵循 ``plugin.yaml`` + ``__init__.py`` 的标准结构。
+   **模型提供者不是插件**
 
-::
+   Hermes 的 LLM Provider（如 Anthropic、Gemini、DeepSeek、Bedrock 等）并非通过插件系统管理。
+   Provider 的身份、路由和认证逻辑统一由 ``hermes_cli/providers.py`` 中的核心叠加层（overlay）
+   和 models.dev 目录数据合并实现。这种设计是刻意的——模型路由属于核心基础设施，
+   不适合走插件的延迟加载和异常隔离路径。
 
-    plugins/model-providers/
-        anthropic/
-            __init__.py      # 实现 ProviderProfile ABC
-            plugin.yaml      # 声明 name, requires_env 等
-        gemini/
-            __init__.py
-            plugin.yaml
-        bedrock/
-            __init__.py
-            plugin.yaml
-        ... (共 33 个)
+   ``plugins/`` 目录下**不存在** ``model-providers`` 子目录，也不存在 ``ProviderProfile``
+   抽象基类。新增 Provider 不需要创建插件目录，只需在 ``hermes_cli/providers.py`` 的
+   ``HERMES_OVERLAYS`` 字典中添加条目即可。
 
-每个 Provider 插件通过实现 ``ProviderProfile`` 抽象基类（定义在 ``agent/credential_sources.py``）
-来注册自己的凭证解析、基础 URL 和能力声明。``PluginManager`` 在启动时扫描
-``plugins/model-providers/`` 并加载所有 Provider 插件，使它们在 ``auxiliary_client.py``
-的路由表中自动可用。
-
-这种架构的核心价值是 **零核心改动** ：新增一个 LLM Provider 只需在
-``plugins/model-providers/`` 下创建一个子目录，无需修改 ``auxiliary_client.py`` 或
-``auth.py`` 中的任何代码。
+   详细的 Provider 架构（数据源合并、传输类型、认证模式）请参见
+   :ref:`chapter-model-routing`。
 
 ***************************
 运营类插件
@@ -676,10 +670,13 @@ Hermes Agent 的插件系统是一个设计良好的扩展框架，通过标准�
 
 - **上下文引擎替换** 允许完全自定义的上下文管理策略。
 
-- **模型提供者插件** 通过可插拔架构支持 33 个 LLM 后端，新 Provider 接入零核心改动。
-
 - **运营类插件** 涵盖磁盘清理、图片生成、会议集成、成就系统和看板管理等功能，展示插件生态的广度。
 
 - **工具合并与命令发现** 使插件能力无缝融入核心体验，用户无需区分工具和命令的来源。
 
-这一架构使得 Hermes Agent 能够在不修改核心代码的情况下，灵活地适应各种使用场景和集成需求。从核心的模型调用和记忆管理，到运营层面的会议机器人和项目看板，插件系统为 Agent 的能力扩展提供了统一而强大的基础设施。
+.. note::
+
+   **模型提供者不属于插件系统** 。LLM Provider 的路由和认证由 ``hermes_cli/providers.py``
+   中的核心叠加层管理，不属于插件系统的扩展点。详见 :ref:`chapter-model-routing`。
+
+这一架构使得 Hermes Agent 能够在不修改核心代码的情况下，灵活地适应各种使用场景和集成需求。从核心的记忆管理到运营层面的会议机器人和项目看板，插件系统为 Agent 的能力扩展提供了统一而强大的基础设施。
