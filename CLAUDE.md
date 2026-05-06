@@ -42,7 +42,7 @@ This generates `scripts/changes-summary.md` listing all commits since the last s
 ## Build locally
 
 ```bash
-pip install sphinx==8.2.3 sphinx-rtd-theme==3.0.2 sphinxcontrib-mermaid==2.0.2
+pip install sphinx==9.1.0 sphinx-rtd-theme==3.1.0 sphinxcontrib-mermaid==2.0.2
 sphinx-build -b html . _build/html
 ```
 
