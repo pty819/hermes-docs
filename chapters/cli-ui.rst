@@ -991,6 +991,139 @@ Ctrl+C 在 Hermes CLI 中有五级优先级的处理逻辑：
 - 在 **空闲状态下** ，需要双击才能退出，防止误触
 - 在 **交互模式中** ，Ctrl+C 优雅地取消当前提示，而不是退出整个程序
 
+扩展 CLI 命令生态
+==================
+
+随着 Hermes Agent 功能的不断丰富，CLI 层面陆续引入了多个重量级子系统。
+它们不再只是简单的 slash 命令，而是拥有独立数据模型、持久化存储和复杂交互逻辑的 **自治模块** 。
+本节将逐一剖析这些扩展命令的设计理念和架构要点。
+
+Kanban 看板系统
+-----------------
+
+``hermes kanban`` 是一个功能完备的任务管理看板，由三个核心模块支撑：
+
+- ``hermes_cli/kanban.py`` （约 2000 行）——看板 CLI 的主入口和交互逻辑
+- ``hermes_cli/kanban_db.py`` （约 4000 行）——基于 SQLite 的持久化存储层
+- ``hermes_cli/kanban_diagnostics.py`` （约 650 行）——任务健康诊断引擎
+
+**核心能力** ：
+
+- **任务生命周期管理** ：创建（``hermes kanban create``）、分配（``assign``）、
+  状态流转（``move``）、关闭（``close``）——完整的任务生命周期覆盖。
+- **看板仪表盘** ：以列式布局展示各阶段任务，支持按优先级、负责人、标签筛选。
+  仪表盘通过 WebSocket 推送实时更新，无需手动刷新。
+- **诊断引擎** ：``kanban_diagnostics.py`` 实现了一套任务"压力信号"检测机制——
+  当任务长时间未推进、依赖阻塞或被反复重开时，系统会主动发出告警，
+  帮助团队及时发现和化解瓶颈。
+
+.. mermaid::
+   :name: kanban-architecture
+   :caption: Kanban 看板系统架构
+
+   flowchart TD
+       CLI["hermes kanban <subcmd>"] --> CMD["kanban.py<br/>命令解析与交互"]
+       CMD --> DB["kanban_db.py<br/>SQLite 持久化"]
+       CMD --> DIAG["kanban_diagnostics.py<br/>健康诊断"]
+       DB --> SQLITE["~/.hermes/kanban.db"]
+       DIAG --> SIGNALS["压力信号检测"]
+       SIGNALS --> NOTIFY["告警通知"]
+
+Curator 内容管理
+------------------
+
+``hermes curator`` 提供了两个子命令，用于管理 Skill 和捆绑内容的生命周期：
+
+- ``hermes curator archive`` ——将不再活跃的 Skill 归档，释放索引空间但保留历史记录
+- ``hermes curator prune`` ——清理过期或冗余的内容条目
+
+Curator 的设计哲学是 **轻量但有序** ：Agent 的 Skill 仓库会随着时间膨胀，
+如果没有定期整理机制，搜索和加载效率都会下降。
+Curator 通过标签和最后使用时间自动判断哪些内容值得保留、哪些可以归档或删除。
+
+Voice 语音系统
+----------------
+
+``hermes_cli/voice.py`` （约 734 行）实现了完整的语音输入输出能力：
+
+- **语音输入（STT）** ：支持多种语音识别提供者，将用户语音实时转写为文本
+- **语音输出（TTS）** ：支持多种 TTS 引擎，可将 Agent 回复合成为语音播放
+- **豆包语音集成** ：内置对字节跳动 Doubao Speech 的支持，提供低延迟的中文语音识别与合成
+
+语音模式可通过 ``/voice`` slash 命令或 ``Ctrl+B`` 快捷键切换。
+每个语音提供者独立配置，用户可以在 ``config.yaml`` 中选择偏好的 TTS/STT 引擎。
+
+Hooks 钩子系统
+-----------------
+
+``hermes_cli/hooks.py`` （约 385 行）管理 Shell 钩子，让用户可以将 Hermes 的行为
+自动化嵌入到 Shell 工作流中：
+
+- **会话生命周期钩子** ：在会话开始、结束时自动执行预定义脚本
+- **事件触发钩子** ：响应 Agent 特定事件（如工具调用完成、任务状态变更）
+- **注册与管理** ：通过 ``hermes hooks add`` / ``hermes hooks remove`` / ``hermes hooks list``
+  管理已注册的钩子
+
+钩子系统的核心思想是让 Agent 的能力 **延伸到终端环境**——
+例如，在每次会话结束时自动推送摘要到 Slack，或在特定工具调用后触发文件同步。
+
+Goals 目标追踪
+-----------------
+
+``hermes_cli/goals.py`` （约 535 行）实现了一个目标追踪与进度管理系统：
+
+- **目标创建** ：定义长期或短期目标，关联里程碑和截止日期
+- **进度追踪** ：自动或手动更新目标的完成进度
+- **聚合视图** ：以 dashboard 形式展示所有活跃目标的状态
+
+目标系统与 Kanban 看板形成互补——Kanban 管理具体任务的流转，
+Goals 则从更高维度追踪战略目标的推进情况。
+
+Onboarding 新手引导
+----------------------
+
+``agent/onboarding.py`` 为首次使用 Hermes 的用户提供交互式引导流程：
+
+- **环境检测** ：自动检查 Python 版本、必要的依赖、API Key 配置
+- **交互式配置** ：引导用户完成 ``config.yaml`` 的关键配置项
+- **快速体验** ：配置完成后自动启动一次示范会话，让用户快速上手
+
+新手引导在用户首次执行 ``hermes`` 命令时自动触发，
+也支持通过 ``hermes setup`` 手动重新运行。
+
+Account Usage 用量追踪
+-------------------------
+
+``agent/account_usage.py`` 提供跨 Provider 的 API 用量追踪能力：
+
+- **多 Provider 聚合** ：统一展示来自 Anthropic、OpenAI、OpenRouter 等不同提供商的消费
+- **模型级别统计** ：按模型拆分 token 用量和费用估算
+- **用量预警** ：接近配额上限时主动提醒
+
+通过 ``/usage`` slash 命令可以在 REPL 中实时查看当前会话和历史会话的用量统计。
+
+其他 CLI 改进
+--------------
+
+除了上述重量级子系统外，CLI 层面还有若干值得关注的改进：
+
+**Slack CLI** （``hermes_cli/slack_cli.py``）：提供 Slack 集成的专用命令，
+支持从终端直接向 Slack 频道发送消息或拉取对话上下文。
+
+**Fallback 命令** （``hermes_cli/fallback_cmd.py``）：管理后备 Provider 的配置。
+当主 Provider 不可用时，系统自动切换到预配置的备选方案，确保服务连续性。
+
+**Skills Reset** （``hermes skills reset``）：新增的子命令，
+允许用户将 Skill 回退到默认状态，清除自定义修改。
+
+**Model Catalog 改进** （``hermes_cli/model_catalog.py``）：
+引入 ``list_picker_providers`` 函数和基于 ``config.yaml`` 的模型别名解析机制，
+使 ``/model`` 命令的模型列表更加智能——自动识别用户配置的别名，
+按 Provider 分组展示，并标记推荐模型。
+
+**Startup Tips** ：新增约 100 条 CLI 启动提示，
+在 REPL 启动时随机展示，涵盖快捷键技巧、隐藏功能、最佳实践等。
+
 源码文件索引
 ==============
 
@@ -1002,3 +1135,15 @@ Ctrl+C 在 Hermes CLI 中有五级优先级的处理逻辑：
 - ``hermes_cli/callbacks.py`` — Clarify、Secret、Approval 交互回调
 - ``hermes_cli/skin_engine.py`` — ``SkinConfig`` ，8+ 内置主题，颜色继承，prompt_toolkit 样式桥接
 - ``agent/display.py`` — ``KawaiiSpinner`` ，工具预览，内联 diff
+- ``hermes_cli/kanban.py`` — Kanban 看板 CLI 入口，任务管理交互
+- ``hermes_cli/kanban_db.py`` — Kanban SQLite 持久化存储层
+- ``hermes_cli/kanban_diagnostics.py`` — 任务健康诊断引擎
+- ``hermes_cli/curator.py`` — Curator 内容归档与清理
+- ``hermes_cli/voice.py`` — 语音输入输出系统（STT/TTS）
+- ``hermes_cli/hooks.py`` — Shell 钩子注册与管理
+- ``hermes_cli/goals.py`` — 目标追踪与进度管理
+- ``hermes_cli/slack_cli.py`` — Slack 集成命令
+- ``hermes_cli/fallback_cmd.py`` — 后备 Provider 管理
+- ``hermes_cli/model_catalog.py`` — 模型目录与别名解析
+- ``agent/onboarding.py`` — 新手引导流程
+- ``agent/account_usage.py`` — 跨 Provider 用量追踪

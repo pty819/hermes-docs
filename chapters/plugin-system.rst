@@ -507,6 +507,19 @@ Hermes Agent 支持通过插件集成外部内存服务，为 Agent 提供跨会
 
 - **安全** ：所有注入的内容进入用户消息（不修改系统提示），不会影响 prompt cache。
 
+Hindsight 的后续改进
+=======================
+
+以内存提供者 hindsight 为例，该插件在后期经历了一系列重要的改进：
+
+- **Probe API 的 ``update_mode='append'``** ：hindsight 引入了探测（probe）接口，
+  允许以追加模式存储记忆条目。新的上下文信息可以增量添加到已有记忆中，
+  而无需覆盖或重写整个记忆块。这大幅降低了在高频交互场景下的记忆丢失风险。
+
+- **跨进程去重** ：在多 Agent 并发运行或会话频繁重启的场景中，
+  相同的记忆片段可能被多个进程重复存储。hindsight 的去重机制确保同一条记忆
+  在全局范围内只保留一份，提高了记忆检索的精确度并降低存储开销。
+
 ************************
 8. 上下文引擎插件
 ************************
@@ -568,6 +581,84 @@ Hermes Agent 的内置上下文管理使用 ``ContextCompressor`` 进行上下�
 
 每个插件的加载被独立的 try/except 包裹。如果某个插件的 ``register()`` 函数抛出异常，该插件会被标记为 ``enabled=False`` 并记录错误信息，但不影响其他插件的加载。``list_plugins()`` 方法返回所有插件的状态（包括失败原因），方便调试。
 
+****************************
+9. 模型提供者插件
+****************************
+
+Hermes 将所有 33 个 LLM Provider 以插件形式托管在 ``plugins/model-providers/`` 目录下。
+这是插件系统最大规模的应用——每一个 Provider（Anthropic、Gemini、Bedrock、DeepSeek 等）
+都是一个标准的 Hermes 插件，遵循 ``plugin.yaml`` + ``__init__.py`` 的标准结构。
+
+::
+
+    plugins/model-providers/
+        anthropic/
+            __init__.py      # 实现 ProviderProfile ABC
+            plugin.yaml      # 声明 name, requires_env 等
+        gemini/
+            __init__.py
+            plugin.yaml
+        bedrock/
+            __init__.py
+            plugin.yaml
+        ... (共 33 个)
+
+每个 Provider 插件通过实现 ``ProviderProfile`` 抽象基类（定义在 ``agent/credential_sources.py``）
+来注册自己的凭证解析、基础 URL 和能力声明。``PluginManager`` 在启动时扫描
+``plugins/model-providers/`` 并加载所有 Provider 插件，使它们在 ``auxiliary_client.py``
+的路由表中自动可用。
+
+这种架构的核心价值是 **零核心改动** ：新增一个 LLM Provider 只需在
+``plugins/model-providers/`` 下创建一个子目录，无需修改 ``auxiliary_client.py`` 或
+``auth.py`` 中的任何代码。
+
+***************************
+10. 运营类插件
+***************************
+
+除了核心的内存和上下文引擎插件，Hermes 的插件生态已扩展到多个运营领域：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - 插件
+     - 功能描述
+   * - disk-cleanup
+     - 磁盘空间管理。扫描临时文件、旧日志、过期缓存，提供清理建议和自动清理。
+   * - image_gen (openai, xai, openai-codex)
+     - 图片生成。支持 OpenAI DALL-E、xAI Grok Imagine、OpenAI Codex 三种后端，
+       通过 ``agent/image_routing.py`` 智能路由到可用的后端。
+   * - google_meet
+     - Google Meet 集成。包含会议机器人（``meet_bot.py``）、音频桥接（``audio_bridge.py``）、
+       实时转录（``realtime/``）和 Node.js 子进程管理。
+   * - hermes-achievements
+     - 成就系统。为 Agent 使用引入游戏化元素——追踪使用里程碑、技能掌握进度，
+       提供可视化仪表板展示成就等级。
+   * - kanban
+     - 看板任务管理。包含 Web 仪表板（``dashboard/``）、任务调度器（dispatcher）、
+       SQLite 数据库（``kanban_db``），支持多 Agent 并行任务分配和进度追踪。
+
+这些插件展示了 Hermes 插件架构的 **广度** ——从基础设施维护（磁盘清理）
+到用户交互（成就系统、看板），所有扩展都遵循相同的 ``plugin.yaml`` + ``register()``
+范式。
+
+***************************
+11. 插件工具合并与命令发现
+***************************
+
+插件注册的工具现在会自动合并到内置工具集中。这意味着：
+
+- **LLM 视角统一** ：LLM 看到的是一个统一的工具列表，无需区分工具来源
+  是核心模块还是插件
+- **工具集过滤生效** ：``hermes tools`` 命令中的工具集分组对插件工具同样有效
+- **Schema 一致性** ：插件工具的 JSON Schema 与内置工具遵循相同的验证规则
+
+此外，插件的 CLI 命令在 ``hermes`` 命令分发阶段被自动发现。
+当用户执行 ``hermes <subcommand>`` 时，CLI 框架不仅查找内置子命令，
+还会扫描所有已加载插件注册的 ``register_cli_command`` 条目。
+这使得插件可以无缝扩展 CLI 命令空间，例如 ``hermes myplugin config`` 。
+
 总结
 ======
 
@@ -585,4 +676,10 @@ Hermes Agent 的插件系统是一个设计良好的扩展框架，通过标准�
 
 - **上下文引擎替换** 允许完全自定义的上下文管理策略。
 
-这一架构使得 Hermes Agent 能够在不修改核心代码的情况下，灵活地适应各种使用场景和集成需求。
+- **模型提供者插件** 通过可插拔架构支持 33 个 LLM 后端，新 Provider 接入零核心改动。
+
+- **运营类插件** 涵盖磁盘清理、图片生成、会议集成、成就系统和看板管理等功能，展示插件生态的广度。
+
+- **工具合并与命令发现** 使插件能力无缝融入核心体验，用户无需区分工具和命令的来源。
+
+这一架构使得 Hermes Agent 能够在不修改核心代码的情况下，灵活地适应各种使用场景和集成需求。从核心的模型调用和记忆管理，到运营层面的会议机器人和项目看板，插件系统为 Agent 的能力扩展提供了统一而强大的基础设施。

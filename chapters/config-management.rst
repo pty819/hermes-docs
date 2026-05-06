@@ -160,6 +160,7 @@ Agent 行为
     "display": {
         "compact": False,
         "personality": "kawaii",
+        "language": "",               # UI 语言，空字符串 = 跟随系统
         "streaming": False,
         "inline_diffs": True,
         "show_cost": False,
@@ -403,6 +404,100 @@ Managed 模式
 - 容器执行模式通过 ``~/.hermes/.container-mode`` 配置文件管理
 
 ****************************
+7. 国际化（i18n）支持
+****************************
+
+Hermes Agent 内置了国际化框架（``agent/i18n.py``），支持将 UI 静态消息翻译为多种语言。
+该框架基于 YAML 语言包文件，通过 ``display.language`` 配置选项控制当前界面语言。
+
+支持的语言
+============
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 20 40
+
+   * - 语言代码
+     - 语言
+     - 文件路径
+   * - ``en``
+     - English（默认）
+     - ``locales/en.yaml``
+   * - ``zh``
+     - 中文
+     - ``locales/zh.yaml``
+   * - ``ja``
+     - 日本語
+     - ``locales/ja.yaml``
+   * - ``de``
+     - Deutsch
+     - ``locales/de.yaml``
+   * - ``es``
+     - Español
+     - ``locales/es.yaml``
+   * - ``fr``
+     - Français
+     - ``locales/fr.yaml``
+   * - ``tr``
+     - Türkçe
+     - ``locales/tr.yaml``
+   * - ``uk``
+     - Українська
+     - ``locales/uk.yaml``
+
+配置方法
+==========
+
+在 ``config.yaml`` 中设置 ``display.language`` 即可切换 UI 语言::
+
+    display:
+      language: zh       # 将界面语言切换为中文
+
+当 ``language`` 为空字符串（默认值）时，Hermes 会自动检测系统语言并使用匹配的语言包；
+如果没有匹配的语言包，则回退到英语。
+
+i18n 框架实现
+==============
+
+``agent/i18n.py`` 提供了以下核心能力：
+
+- **语言包加载** ：启动时读取 ``locales/<lang>.yaml`` ，解析为键值对字典
+- **消息翻译** ：通过翻译键（如 ``"welcome_message"`` ）获取当前语言的翻译文本
+- **回退机制** ：当目标语言缺少某个翻译键时，自动回退到英语（``en.yaml``）
+- **动态切换** ：支持运行时根据 ``display.language`` 配置变更语言
+
+YAML 语言包采用嵌套键结构::
+
+    # locales/zh.yaml 示例
+    welcome: "欢迎使用 Hermes"
+    agent:
+      thinking: "思考中..."
+      waiting: "等待响应..."
+    errors:
+      timeout: "请求超时"
+      auth_failed: "认证失败"
+
+****************************
+8. Model Aliases 配置
+****************************
+
+Hermes 支持通过 ``config.yaml`` 中的 ``model.aliases`` 字段定义自定义模型名称映射::
+
+    model:
+      aliases:
+        fast: "openrouter/anthropic/claude-3.5-haiku"
+        smart: "openrouter/anthropic/claude-4-opus"
+        vision: "openrouter/google/gemini-2.0-flash"
+        local: "ollama/llama3.1:8b"
+
+定义后，用户可以直接使用别名::
+
+    hermes chat --model fast
+
+别名解析在 ``load_config()`` 流程中完成，发生在深度合并之后。
+别名可以被环境变量覆盖，遵循标准的配置优先级链。
+
+****************************
 安全与权限
 ****************************
 
@@ -444,3 +539,5 @@ Hermes 的配置管理系统是一个精心设计的分层架构，其核心原�
 4.  **Profile 隔离** ：通过目录隔离实现完全独立的配置环境
 5.  **向后兼容** ：自动迁移旧版配置格式，平滑升级路径
 6.  **容器友好** ：在 Docker/NixOS 环境中自动适配权限和行为
+7.  **国际化** ：内置 i18n 框架，支持 8 种语言的 UI 翻译
+8.  **模型别名** ：通过 ``model.aliases`` 简化模型指定，提升工作效率

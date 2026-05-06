@@ -607,7 +607,7 @@ AST 扫描的实现
 5. 参数类型强制转换
 ---------------------
 
-LLM（大语言模型）在调用工具时，经常会出现类型不匹配的问题。例如，它们可能会将数字作为字符串传递（``"42"`` 而不是 ``42``），或者将布尔值作为字符串传递（``"true"`` 而不是 ``true``）。
+LLM（大语言模型）在调用工具时，经常会出现类型不匹配的问题。例如，它们可能会将数字作为字符串传递（``"42"`` 而不是 ``42``），或者将布尔值作为字符串传递（``"true"`` 而不是 ``true"``）。
 
 hermes-agent 通过参数类型强制转换系统优雅地解决了这个问题。
 
@@ -761,6 +761,8 @@ hermes-agent 的解决方案不是改变模型的行为，而是在工具调用�
 
 调度流程总览
 ~~~~~~~~~~~~~~
+
+工具调度管道在执行工具之前会经过多层安全检查。除了前置钩子（pre-tool call hook）之外，系统还引入了**工具安全护栏**（Tool Guardrails）层，对危险操作进行拦截和验证。我们将在第 9 节详细讨论这个机制。
 
 让我们首先看看 ``handle_function_call()`` ，这是工具调度的主要入口点：
 
@@ -1109,7 +1111,243 @@ hermes-agent 对工具结果采用三层防御策略：
 
 最后，hermes-agent 还实现了轮次预算机制，限制每轮对话中工具结果的总大小。这通常在 Agent Loop 中实现，跟踪工具结果的累积大小，当接近限制时采取行动。
 
-9. 并行执行引擎
+9. 工具安全护栏 (Tool Guardrails)
+-----------------------------------
+
+当 Agent 拥有执行终端命令、写入文件、运行代码等强大能力时，安全就成为了首要关切。hermes-agent 引入了一个独立的安全层 —— ``tool_guardrails.py`` ，在工具实际执行之前对其进行安全验证。
+
+安全护栏的设计理念
+~~~~~~~~~~~~~~~~~~~~
+
+工具安全护栏基于一个核心原则：**在执行之前验证，而不是在执行之后补救**。这个模块作为调度管道中的一个独立层，与前置钩子系统协同工作，但专注于更底层的安全策略：
+
+1. **路径遍历防护** ：阻止通过 ``../../`` 等路径访问预期目录之外的文件
+2. **符号链接检查** ：防止通过符号链接间接访问敏感路径
+3. **命令注入检测** ：识别终端命令中的危险模式
+4. **文件操作审计** ：记录所有文件写入操作，便于事后审查
+
+这些检查在 ``handle_function_call()`` 的调度流程中位于参数强制转换之后、实际执行之前，确保所有工具调用都经过安全验证。
+
+文件操作安全：file_safety.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``file_safety.py`` 是护栏系统中专门负责文件操作安全的子模块。它实现了文件级的安全策略，主要防范以下威胁：
+
+**路径遍历防护**
+
+路径遍历是最常见的文件系统攻击向量之一。恶意或错误的 LLM 输出可能包含类似 ``../../etc/passwd`` 的路径，试图读取或写入系统敏感文件。``file_safety.py`` 通过以下方式防范：
+
+- **路径规范化** ：使用 ``os.path.realpath()`` 将所有路径解析为绝对路径，消除 ``..`` 和符号链接
+- **根目录限制** ：验证规范化后的路径是否在允许的根目录（如项目工作目录）之内
+- **符号链接解析** ：在检查路径边界之前解析符号链接，防止通过符号链接跳出安全沙箱
+
+.. code-block:: python
+
+    # 伪代码，说明路径安全检查的核心逻辑
+    def validate_file_path(path: str, allowed_root: str) -> tuple[bool, str]:
+        """验证文件路径是否在允许的目录范围内。
+
+        Returns:
+            (is_safe, message): 安全检查结果和说明
+        """
+        # 1. 规范化路径，解析符号链接和 .. 组件
+        real_path = os.path.realpath(os.path.expanduser(path))
+        real_root = os.path.realpath(allowed_root)
+
+        # 2. 检查路径是否在允许的根目录下
+        if not real_path.startswith(real_root + os.sep) and real_path != real_root:
+            return False, f"Path traversal detected: {path} resolves outside {allowed_root}"
+
+        return True, "Path is safe"
+
+**符号链接安全**
+
+符号链接是一个特别微妙的安全问题。考虑以下场景：
+
+1. Agent 被限制在 ``/workspace/`` 目录中
+2. 用户（或之前的 Agent 会话）创建了一个符号链接 ``/workspace/link -> /etc/``
+3. 如果 Agent 写入 ``/workspace/link/passwd`` ，它实际上会写入 ``/etc/passwd``
+
+``file_safety.py`` 通过在路径验证之前解析符号链接来消除这种风险。``os.path.realpath()`` 会递归解析所有符号链接组件，返回最终的真实路径。
+
+**与调度管道的集成**
+
+文件安全检查被集成到文件操作工具（``read_file`` 、``write_file`` 、``patch`` ）的处理器中。每当这些工具被调用时，它们会在执行实际的文件 I/O 之前调用 ``file_safety`` 模块的验证函数。如果验证失败，工具返回一个清晰的错误消息，而不是执行操作。
+
+护栏系统的整体架构
+~~~~~~~~~~~~~~~~~~~~
+
+``tool_guardrails.py`` 作为 455 行的安全验证模块，包含了多个维度的安全检查。它的架构遵循了防御纵深（Defense in Depth）原则：
+
+.. mermaid::
+
+    flowchart TD
+        Start([工具调用请求]) --> Coerce[参数强制转换]
+        Coerce --> Guardrails[Tool Guardrails 安全检查]
+        Guardrails --> CheckResult{安全检查通过?}
+        CheckResult -->|否| ReturnError[返回安全错误]
+        CheckResult -->|是| PreHook[前置钩子检查]
+        PreHook --> Dispatch[注册表调度]
+        Dispatch --> FileSafety[文件工具: file_safety 验证]
+        FileSafety --> Execute[执行工具处理器]
+        Execute --> PostHook[后置钩子]
+        PostHook --> ReturnResult[返回结果]
+        ReturnError --> End([结束])
+        ReturnResult --> End
+
+这个流程图展示了护栏系统在整体调度管道中的位置。注意它有两层防护：
+
+1. **通用护栏** （``tool_guardrails.py``）：在调度前检查所有工具调用，包括命令注入检测、参数验证等
+2. **文件安全** （``file_safety.py``）：在文件操作工具内部进行路径和符号链接验证
+
+这种双层设计确保了即使一层检查被绕过，另一层仍然能提供保护。
+
+.. note::
+
+    工具安全护栏与前置钩子系统（pre-tool call hook）是互补的，而非替代关系。钩子系统面向插件开发者，提供灵活的自定义拦截能力；而护栏系统面向框架本身，提供不可绕过的安全基线。两者共同构成了工具执行前的安全防线。
+
+10. 写后增量检查 (Post-write Delta Lint)
+------------------------------------------
+
+在 Agent 编辑文件时，语法错误是最常见的问题之一。如果 Agent 写入了一个格式错误的 JSON 文件，后续步骤可能会因为解析失败而全部崩溃。hermes-agent 通过写后增量检查（Post-write Delta Lint）机制，在文件写入后立即检测语法问题，将错误拦截在传播之前。
+
+问题：写入后的沉默失败
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+考虑以下场景：
+
+1. Agent 使用 ``write_file`` 写入一个 YAML 配置文件
+2. 文件中有一个缩进错误
+3. 后续工具尝试读取这个文件，抛出 ``yaml.YAMLError``
+4. LLM 收到一个不友好的错误消息，需要花几轮对话来定位和修复问题
+
+传统方案是在每次文件写入后运行一个完整的 linter 进程（如 ``python -m json.tool`` 或 ``yamllint``）。但这有两个问题：
+
+1. **子进程开销** ：每次写入都要启动一个新进程，在高频编辑场景下开销显著
+2. **依赖管理** ：需要确保 linter 可执行文件在 PATH 中可用
+
+hermes-agent 的解决方案是：使用 Python 原生的解析器进行增量检查，只检查变更的部分。
+
+增量检查的工作原理
+~~~~~~~~~~~~~~~~~~~~
+
+增量检查的核心思想是：**只检查变更的行（delta），而不是整个文件**。这带来了几个好处：
+
+1. **性能** ：检查范围与变更大小成正比，而不是文件大小
+2. **精确** ：只报告变更引入的问题，不会被文件中已有的问题干扰
+3. **低开销** ：使用 Python 内置的解析器，无需子进程
+
+当 ``write_file`` 或 ``patch`` 工具完成写入后，系统会自动执行以下流程：
+
+.. code-block:: python
+
+    # 伪代码，说明写后增量检查的流程
+    def post_write_delta_lint(file_path: str, original_content: str, new_content: str):
+        """对写入操作的变更部分进行语法检查。
+
+        Args:
+            file_path: 写入的文件路径
+            original_content: 写入前的文件内容
+            new_content: 写入后的文件内容
+        """
+        # 1. 根据文件扩展名选择合适的 linter
+        ext = os.path.splitext(file_path)[1].lower()
+        linter = _get_linter_for_extension(ext)
+        if linter is None:
+            return  # 不支持的文件类型，跳过检查
+
+        # 2. 计算变更的行范围
+        changed_lines = _compute_changed_lines(original_content, new_content)
+        if not changed_lines:
+            return  # 没有变更，跳过检查
+
+        # 3. 对变更内容运行 linter
+        errors = linter(new_content, changed_lines)
+        if errors:
+            logger.warning("Post-write lint errors in %s: %s", file_path, errors)
+
+支持的文件类型
+~~~~~~~~~~~~~~~~
+
+增量检查支持四种常见的配置和代码文件格式，每种都使用 Python 原生解析器，避免子进程开销：
+
+1. **JSON** ：使用 ``json.loads()`` 验证。JSON 语法严格，任何格式错误都会被捕获。这是最常见的 Agent 输出格式。
+
+2. **YAML** ：使用 ``yaml.safe_load()`` 验证。YAML 的缩进规则容易出错，特别是在 Agent 生成多层嵌套结构时。使用 ``safe_load`` 而不是 ``load`` 也是出于安全考虑，防止反序列化攻击。
+
+3. **TOML** ：使用 ``tomllib.loads()`` 验证（Python 3.11+ 内置）。TOML 是 ``pyproject.toml`` 等项目配置文件的常用格式。
+
+4. **Python** ：使用 ``ast.parse()`` 验证语法。这与第 3 节中 AST 预扫描使用的相同机制。注意这只检查语法错误，不检查运行时错误。
+
+为什么选择进程内检查？
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+进程内（in-process）检查是这个设计的关键决策。让我们对比两种方案：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - 特性
+     - 子进程方案
+     - 进程内方案
+   * - 延迟
+     - 每次 50-200ms（进程启动）
+     - 每次 < 1ms
+   * - 依赖
+     - 需要安装外部 linter
+     - 仅需 Python 标准库
+   * - 错误粒度
+     - 通常只能定位到行号
+     - 可以精确定位到变更区域
+   * - 资源消耗
+     - 进程创建/销毁开销
+     - 仅内存分配
+   * - 跨平台
+     - 依赖平台特定二进制
+     - 纯 Python，完全跨平台
+
+对于 Agent 场景，文件写入是高频操作。如果每次写入都启动一个子进程，累积的延迟会显著影响交互体验。进程内方案几乎不增加额外延迟，同时保持了对常见语法错误的检测能力。
+
+与调度管道的集成
+~~~~~~~~~~~~~~~~~~
+
+写后增量检查被集成在文件工具的处理器内部，位于文件写入完成之后、返回结果之前：
+
+.. mermaid::
+
+    sequenceDiagram
+        participant Agent as LLM Agent
+        participant Dispatch as 调度器
+        participant FileTool as write_file / patch
+        participant Lint as Delta Lint
+        participant FS as 文件系统
+
+        Agent->>Dispatch: write_file(path, content)
+        Dispatch->>FileTool: 执行写入
+        FileTool->>FS: 保存文件
+        FS-->>FileTool: 写入成功
+        FileTool->>Lint: post_write_delta_lint(path, old, new)
+        alt 有语法错误
+            Lint-->>FileTool: 返回错误信息
+            FileTool-->>Dispatch: 返回包含 lint 警告的结果
+        else 语法正确
+            Lint-->>FileTool: 无错误
+            FileTool-->>Dispatch: 返回成功结果
+        end
+        Dispatch-->>Agent: 返回工具结果
+
+这种集成方式意味着：
+
+1. **零额外调用** ：Agent 不需要显式调用 lint 工具，检查是自动的
+2. **即时反馈** ：语法错误在写入后的同一个工具响应中就报告给 LLM
+3. **不阻塞写入** ：即使 lint 发现问题，文件仍然会被保存（lint 结果作为警告而非错误返回），LLM 可以根据警告自行决定是否修复
+
+.. note::
+
+    写后增量检查的设计哲学是"快速提醒，不阻断执行"。lint 错误作为工具结果的一部分返回给 LLM，而不是作为异常中断工作流。这给了 LLM 最大的灵活性来决定如何处理语法问题 —— 可以立即修复，也可以在后续步骤中一并处理。
+
+11. 并行执行引擎
 -----------------
 
 现代 LLM 支持在单个响应中调用多个工具，hermes-agent 的并行执行引擎可以智能地决定哪些工具可以并行执行，哪些必须顺序执行。
@@ -1189,7 +1427,7 @@ hermes-agent 将工具分为三类：
 
 这个流程图展示了决定一批工具调用是否可以并行执行的决策过程。
 
-10. 异步桥接
+12. 异步桥接
 --------------
 
 最后，让我们探讨 hermes-agent 的异步桥接机制，这是一个将异步工具处理器集成到同步代码路径中的优雅解决方案。
@@ -1287,14 +1525,15 @@ _run_async()：统一的桥接
 总结
 ------
 
-在本章中，我们深入探讨了 hermes-agent 的工具系统，从自注册模式、线程安全注册表、AST 预扫描、工具集组合、参数类型强制转换、调度执行、Agent Loop 拦截、预算控制、并行执行到异步桥接。
+在本章中，我们深入探讨了 hermes-agent 的工具系统，从自注册模式、线程安全注册表、AST 预扫描、工具集组合、参数类型强制转换、调度执行、Agent Loop 拦截、预算控制、工具安全护栏、写后增量检查、并行执行到异步桥接。
 
 这个系统的设计体现了几个重要原则：
 
 1. **关注点分离** ：每个组件都有清晰的职责
 2. **弹性** ：系统能够优雅地处理错误和边界情况
-3. **性能** ：通过快照、缓存、持久化循环等优化
-4. **可扩展性** ：新工具可以轻松添加，工具集可以灵活组合
-5. **线程安全** ：多线程环境下的安全访问
+3. **安全纵深** ：多层防护确保工具执行的安全性
+4. **性能** ：通过快照、缓存、进程内检查、持久化循环等优化
+5. **可扩展性** ：新工具可以轻松添加，工具集可以灵活组合
+6. **线程安全** ：多线程环境下的安全访问
 
 理解这个系统不仅有助于使用 hermes-agent，也能为设计其他 AI Agent 框架提供参考。
