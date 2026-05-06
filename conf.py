@@ -56,64 +56,64 @@ mermaid_fullscreen = True
 mermaid_fullscreen_button = "⤢"
 mermaid_fullscreen_button_opacity = "55"
 mermaid_width = "100%"
-mermaid_init_js = """
-mermaid.initialize({
-  startOnLoad: true,
-  theme: "base",
-  flowchart: {
-    htmlLabels: true,
-    useMaxWidth: false,
-    curve: "basis",
-    nodeSpacing: 42,
-    rankSpacing: 60,
-    padding: 18,
-  },
-  sequence: {
-    useMaxWidth: false,
-    wrap: true,
-    actorMargin: 72,
-    width: 160,
-    messageMargin: 24,
-    noteMargin: 18,
-    diagramMarginX: 24,
-    diagramMarginY: 20,
-  },
-  class: {
-    useMaxWidth: false,
-  },
-  state: {
-    useMaxWidth: false,
-  },
-  themeVariables: {
-    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    fontSize: "14px",
-    primaryColor: "#fff7ed",
-    primaryTextColor: "#1f2937",
-    primaryBorderColor: "#c2410c",
-    lineColor: "#475569",
-    secondaryColor: "#eff6ff",
-    tertiaryColor: "#f8fafc",
-    background: "#ffffff",
-    mainBkg: "#ffffff",
-    clusterBkg: "#f8fafc",
-    clusterBorder: "#94a3b8",
-    edgeLabelBackground: "#ffffff",
-    noteBkgColor: "#fffbeb",
-    noteBorderColor: "#f59e0b",
-    actorBkg: "#eff6ff",
-    actorBorder: "#3b82f6",
-    actorTextColor: "#1e3a8a",
-    actorLineColor: "#64748b",
-    signalColor: "#475569",
-    signalTextColor: "#334155",
-    labelBoxBkgColor: "#ffffff",
-    labelBoxBorderColor: "#cbd5e1",
-    activationBkgColor: "#dbeafe",
-    activationBorderColor: "#60a5fa",
-    sequenceNumberColor: "#1e3a8a",
-  },
-});
-"""
+
+# sphinxcontrib-mermaid 2.x: pass init config as a dict (not mermaid_init_js)
+# The template merges this with dark/light theme overrides automatically.
+mermaid_init_config = {
+    "startOnLoad": False,
+    "flowchart": {
+        "htmlLabels": True,
+        "useMaxWidth": False,
+        "curve": "basis",
+        "nodeSpacing": 42,
+        "rankSpacing": 60,
+        "padding": 18,
+    },
+    "sequence": {
+        "useMaxWidth": False,
+        "wrap": True,
+        "actorMargin": 72,
+        "width": 160,
+        "messageMargin": 24,
+        "noteMargin": 18,
+        "diagramMarginX": 24,
+        "diagramMarginY": 20,
+    },
+    "class": {
+        "useMaxWidth": False,
+    },
+    "state": {
+        "useMaxWidth": False,
+    },
+    "themeVariables": {
+        "fontFamily": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+        "fontSize": "14px",
+        "primaryColor": "#fff7ed",
+        "primaryTextColor": "#1f2937",
+        "primaryBorderColor": "#c2410c",
+        "lineColor": "#475569",
+        "secondaryColor": "#eff6ff",
+        "tertiaryColor": "#f8fafc",
+        "background": "#ffffff",
+        "mainBkg": "#ffffff",
+        "clusterBkg": "#f8fafc",
+        "clusterBorder": "#94a3b8",
+        "edgeLabelBackground": "#ffffff",
+        "noteBkgColor": "#fffbeb",
+        "noteBorderColor": "#f59e0b",
+        "actorBkg": "#eff6ff",
+        "actorBorder": "#3b82f6",
+        "actorTextColor": "#1e3a8a",
+        "actorLineColor": "#64748b",
+        "signalColor": "#475569",
+        "signalTextColor": "#334155",
+        "labelBoxBkgColor": "#ffffff",
+        "labelBoxBorderColor": "#cbd5e1",
+        "activationBkgColor": "#dbeafe",
+        "activationBorderColor": "#60a5fa",
+        "sequenceNumberColor": "#1e3a8a",
+    },
+}
 
 html_theme_options = {
     "navigation_depth": 4,
