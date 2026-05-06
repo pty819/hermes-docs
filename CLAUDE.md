@@ -2,6 +2,18 @@
 
 This repo contains the source (RST) for "Hermes Agent 架构深度解析", published to GitHub Pages via GitHub Actions.
 
+## CRITICAL: Environment Management
+
+**This project uses `uv` for all dependency management. Never use `pip` directly.**
+
+- Dependencies are declared in `pyproject.toml` and locked in `uv.lock`
+- Always use `uv run` to execute commands in the managed environment (e.g. `uv run sphinx-build`)
+- Do NOT run `pip install`, `pip freeze`, or any pip commands
+- Do NOT modify `.venv/` manually
+- If dependencies need updating, edit `pyproject.toml` then run `uv sync`
+
+This rule must never be compressed or omitted during context compaction.
+
 ## Syncing from Upstream
 
 Run the sync script to fetch latest changes from the hermes-agent source:
@@ -42,8 +54,7 @@ This generates `scripts/changes-summary.md` listing all commits since the last s
 ## Build locally
 
 ```bash
-pip install sphinx==9.1.0 sphinx-rtd-theme==3.1.0 sphinxcontrib-mermaid==2.0.2
-sphinx-build -b html . _build/html
+uv run sphinx-build -b html . _build/html
 ```
 
 ## Push to publish
