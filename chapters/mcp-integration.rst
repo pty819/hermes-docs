@@ -112,6 +112,17 @@ HTTP 传输使用 MCP SDK 的 ``streamable_http_client()`` （新版 API）或 `
 
 如果配置中同时包含 ``url`` 和 ``command`` ，HTTP 传输优先，Agent 会输出一条警告日志。
 
+URL 前置校验
+=============
+
+远程 MCP 服务器的 URL 在连接建立之前会经过严格的前置校验。``_validate_mcp_url()`` 函数执行以下检查：
+
+1.  **格式校验** ：URL 必须以 ``http://`` 或 ``https://`` 开头。
+2.  **Scheme 限制** ：不允许非 HTTP 协议（如 ``file://`` 、``ftp://`` ）。
+3.  **主机名校验** ：URL 必须包含有效的主机名（非空、非纯 IP 广播地址）。
+
+如果校验失败，Hermes 会立即返回一条清晰的错误消息，指出具体的校验失败原因（如 "URL must start with http:// or https://"），而不是等到连接超时后再报错。这一前置校验大幅缩短了配置错误的反馈周期，避免了用户等待数十秒后才看到连接超时错误。
+
 .. mermaid::
    :name: transport-selection
    :caption: 传输方式选择与流程
@@ -303,6 +314,15 @@ MCP 工具的 ``inputSchema`` 通过 ``_normalize_mcp_input_schema()`` 函数规
          # exclude: ["delete_repo"]           # 黑名单：注册除这些之外的所有工具
 
 当 ``include`` 和 ``exclude`` 同时存在时，``include`` 优先。
+
+并行工具调用
+=============
+
+MCP 服务器可以通过 ``supports_parallel_tool_calls`` 能力声明告知客户端：同一服务器暴露的多个工具可以并行执行，无需串行等待。
+
+当该能力启用时，Hermes 的工具调度器会将同一轮次中来自同一 MCP 服务器的多个工具调用并行派发，而非按顺序逐个执行。这显著缩短了多工具调用场景的响应延迟——例如，同时读取多个文件的场景可从串行的 N * RTT 降低为并行的 1 * RTT。
+
+如果 MCP 服务器未声明此能力（或显式声明为 ``false`` ），Hermes 保持原有的串行调用行为，确保向后兼容。
 
 .. mermaid::
    :name: tool-registration-seq

@@ -99,10 +99,31 @@ Provider 注册表
 注册表中包含 33 个 Provider，覆盖了从全球到中国的主流 LLM 服务：
 
 - **聚合器** ：OpenRouter, Nous Portal, AI Gateway (Vercel), OpenCode, Kilo Code, Hugging Face
-- **直连国际** ：Anthropic, OpenAI Codex, Google Gemini, xAI, NVIDIA NIM, DeepSeek, Arcee
+- **直连国际** ：Anthropic, OpenAI Codex, Google Gemini, xAI, xAI Grok OAuth, NVIDIA NIM, DeepSeek, Arcee, NovitaAI
 - **直连中国** ：Z.AI (智谱/GLM), Kimi (月之暗面), MiniMax, Alibaba (通义千问), Xiaomi (小米 MiMo), Alibaba Coding Plan
 - **本地部署** ：Custom (Ollama, llama.cpp, vLLM, LM Studio)
 - **企业级** ：AWS Bedrock, Azure Foundry, GitHub Copilot, Copilot ACP
+
+xAI Grok OAuth Provider
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+新增的 xAI Grok OAuth Provider 专为 xAI SuperGrok 订阅用户设计。该 Provider 通过 OAuth 设备码流程完成认证，而非传统的 API Key 方式。
+
+核心特性：
+
+- **OAuth 认证** ：使用 ``oauth_external`` 认证类型，通过设备码流程获取访问令牌。
+- **Entitlement 403 优雅处理** ：当用户订阅不包含某模型权限时（例如免费用户尝试使用付费模型），API 返回 HTTP 403。Hermes 会捕获该错误并返回清晰的提示消息，引导用户升级订阅或选择其他模型，而非崩溃或无限重试。
+- **Grok-4.3 百万上下文** ：Grok-4.3 模型支持 1M（1,000,000）token 的上下文窗口，是当前所有集成 Provider 中最大的上下文长度之一。
+- **x_search 工具集自动启用** ：当 xAI Grok OAuth Provider 配置完成后，Hermes 会自动启用 ``x_search`` 工具集，允许 Agent 在对话中调用 xAI 的实时搜索能力获取最新信息。
+
+NovitaAI Provider
+~~~~~~~~~~~~~~~~~~
+
+NovitaAI 是新增的按量付费（pay-per-use）Provider，提供 90+ 个模型的接入，覆盖主流的开源和商业模型。其特点包括：
+
+- **无订阅要求** ：纯按量付费模式，适合低频或不确定模型需求的用户。
+- **广泛模型覆盖** ：90+ 模型涵盖文本生成、视觉理解、代码补全等多种能力。
+- **OpenAI 兼容端点** ：使用 ``openai_chat`` 传输协议，无需额外适配器。
 
 Provider 注册表：HermesOverlay 与 models.dev
 ================================================
@@ -426,6 +447,11 @@ Opus 4.7+ 采样参数限制
 
 Opus 4.7+ 拒绝任何非默认的 ``temperature`` 、``top_p`` 、``top_k`` 参数。``_build_call_kwargs()`` 在构建请求参数时检查这一限制并静默移除采样参数。
 
+DeepSeek Thinking Mode
+=======================
+
+DeepSeek API 新增了对 ``thinking.type`` 和 ``reasoning_effort`` 的映射支持。当用户选择的模型进入思考模式时，Hermes 会自动将 ``reasoning_effort`` 参数（如 ``low`` 、``medium`` 、``high`` ）转换为 DeepSeek API 期望的 ``thinking.type`` 格式。这一映射逻辑直接在 ``DeepSeekProfile`` 中实现，而非通过遗留的通用回退机制处理，确保了参数传递的准确性和可维护性。
+
 ******************************
 上下文长度解析 10 级优先级
 ******************************
@@ -729,6 +755,19 @@ Assist API 实现完整的双向翻译：
 - OpenAI ``messages[]`` / ``tools[]`` → Gemini ``contents[]`` / ``functionDeclarations``
 - 请求体包裹为 ``{project, model, user_prompt_id, request}`` 格式
 - SSE 流式传输产出 OpenAI 格式的 delta chunk
+
+本地 OpenAI 兼容代理
+=====================
+
+部分工具（如某些 MCP 服务器和第三方库）仅支持 OpenAI API 格式，无法直接与 OAuth 认证的 Provider 交互。为此，Hermes 提供了一个本地 OpenAI 兼容代理（Local OpenAI-compatible Proxy）。
+
+该代理在本地启动一个轻量级 HTTP 服务器，对外暴露标准 OpenAI Chat Completions 端点（``/v1/chat/completions``），在内部将请求转发给经过 OAuth 认证的 Provider（如 xAI Grok OAuth、Nous Portal 等）。这样，只支持 OpenAI 格式的工具无需任何修改即可使用这些 Provider。
+
+核心特性：
+
+- **透明转发** ：代理接收标准 OpenAI 格式请求，自动转换为底层 Provider 的认证和格式要求。
+- **OAuth 令牌注入** ：自动从 Hermes 凭证池获取有效的 OAuth 访问令牌，注入到转发的请求中。
+- **零配置** ：代理随 Hermes 启动自动运行，无需用户手动配置端口或路由。
 
 ****************************
 总结

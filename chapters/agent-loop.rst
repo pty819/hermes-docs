@@ -14,10 +14,13 @@
 类概览
 ~~~~~~~~
 
-``AIAgent`` 是 Hermes Agent 的核心类。它位于 ``run_agent.py:588`` ，
-是一个超过 11000 行的巨型类。在传统 OOP 意义上，这样一个大类可能被视为
+``AIAgent`` 是 Hermes Agent 的核心类，其入口方法仍定义在 ``run_agent.py`` 中。
+早期版本中，``AIAgent`` 是一个超过 11000 行的巨型单体类——所有逻辑都集中在一个文件里。
+随着代码库的演进，这个巨型类经历了**模块化重构**：核心逻辑被提取到 ``agent/`` 目录下的
+12+ 个专用模块中，每个模块负责一个明确的职责。在传统 OOP 意义上，这样一个大类可能被视为
 "代码坏味道"——但在 Agent 系统中，主循环需要访问几乎所有子系统的状态，
-将它们分散到多个类中反而会增加状态传递的复杂度。
+将它们分散到多个类中反而会增加状态传递的复杂度。模块化重构保留了这个设计决策，
+同时通过文件级别的分离提升了可维护性。
 
 让我们将 ``AIAgent`` 的属性按职责分组来理解。
 
@@ -73,12 +76,70 @@
 - ``session_estimated_cost_usd`` ：预估费用
 - ``session_api_calls`` ：API 调用次数
 
+模块化重构
+^^^^^^^^^^^^
+
+早期版本中，``AIAgent`` 的所有逻辑都集中在 ``run_agent.py`` 一个文件中，超过 11000 行。
+经过多轮重构，核心逻辑被提取到 ``agent/`` 目录下的独立模块中。下表展示了每个提取模块的
+职责和大致规模：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 45 20
+
+   * - 模块
+     - 职责
+     - 大致行数
+   * - ``agent/agent_init.py``
+     - ``__init__`` 构造函数：API 模式推断、客户端初始化、工具加载、压缩器创建
+     - ~1,381
+   * - ``agent/conversation_loop.py``
+     - ``run_conversation()`` 主循环：输入准备、循环结构、响应路由
+     - ~2,000
+   * - ``agent/chat_completion_helpers.py``
+     - 流式 API 调用器、Chat Completion 辅助函数
+     - ~893
+   * - ``agent/system_prompt.py``
+     - 系统提示词构建器（含缓存策略）
+     - ~400
+   * - ``agent/tool_executor.py``
+     - 工具执行引擎：调用、拦截、结果处理
+     - ~800
+   * - ``agent/tool_dispatch_helpers.py``
+     - 工具分发辅助：参数强制转换、幻觉修复、并行/顺序决策
+     - ~500
+   * - ``agent/conversation_compression.py``
+     - 上下文压缩：预压缩检查、多轮压缩、压缩策略
+     - ~600
+   * - ``agent/background_review.py``
+     - 后台审查线程：记忆审查、技能审查、审查提示词
+     - ~400
+   * - ``agent/stream_diag.py``
+     - 流式诊断：陈旧流检测、诊断信息收集
+     - ~200
+   * - ``agent/message_sanitization.py``
+     - 消息清洗：surrogate 移除、记忆标签清理
+     - ~300
+   * - ``agent/agent_runtime_helpers.py``
+     - 10+ 个运行时辅助函数：回退激活、会话持久化、资源清理等
+     - ~700
+   * - ``agent/openai_proxy.py``
+     - OpenAI 代理模式支持
+     - ~300
+   * - ``agent/safe_stdio.py``
+     - 安全 stdio 包装器（``_SafeWriter``）
+     - ~150
+
+重构后，``run_agent.py`` 本身只剩下胶水代码和入口逻辑，各个模块可以独立阅读和测试。
+这种"保留单一类的状态管理优势 + 文件级别的职责分离"的折中方案，
+是大型 Agent 系统在工程实践中的一种务实选择。
+
 类图
 ^^^^^^
 
 .. mermaid::
    :name: agent-class-diagram
-   :caption: AIAgent 核心类与依赖关系
+   :caption: AIAgent 核心类与模块化依赖关系
 
    classDiagram
        class AIAgent {
@@ -136,7 +197,9 @@
        AIAgent --> ErrorClassifier : uses
        AIAgent --> SessionDB : persists to
 
-构造函数 ``__init__`` （第 605-887 行）做了以下关键工作：
+       note for AIAgent "方法已分散到 agent/ 子模块:\nagent_init.py → __init__\nconversation_loop.py → run_conversation()\nchat_completion_helpers.py → 流式调用\nsystem_prompt.py → 提示词构建\ntool_executor.py → 工具执行\nconversation_compression.py → 上下文压缩\nbackground_review.py → 后台审查"
+
+构造函数 ``__init__`` （现位于 ``agent/agent_init.py``）做了以下关键工作：
 
 1. **确定 API 模式。** 根据提供商名称和 base URL 自动推断 API 模式。
    例如，如果 provider 是 ``"anthropic"`` 或 URL 包含 ``api.anthropic.com`` ，
@@ -150,10 +213,13 @@
 
 4. **初始化压缩器。** 创建 ``ContextCompressor`` 实例，配置压缩阈值。
 
-5. **安装安全 stdio。** 通过 ``_install_safe_stdio()`` 包装 stdout/stderr，
+5. **安装安全 stdio。** 通过 ``_install_safe_stdio()`` （现位于 ``agent/safe_stdio.py``）包装 stdout/stderr，
    防止在 systemd/Docker/无头模式下因管道断裂导致的崩溃。
 
-一个值得注意的设计决策是 **``_SafeWriter``** （第 113-160 行）。
+6. **初始化记忆提供商。** 在初始化 ``MemoryProvider`` 时加入空字符串/纯空白字符串的防护，
+   避免因配置项为空导致的运行时异常。
+
+一个值得注意的设计决策是 **``_SafeWriter``** （现位于 ``agent/safe_stdio.py``）。
 它是一个 stdout/stderr 的透明包装器，捕获 ``OSError`` 和 ``ValueError`` ：
 当 Hermes 运行为 systemd 服务或 Docker 容器时，stdout 管道可能在空闲时关闭，
 任何 ``print()`` 调用都会抛出 ``OSError: [Errno 5] Input/output error`` 。
@@ -166,7 +232,8 @@
 方法签名
 ~~~~~~~~~~
 
-``run_conversation()`` 定义在第 8668 行，是整个 Agent 的入口方法：
+``run_conversation()`` 现定义在 ``agent/conversation_loop.py`` 中，
+是整个 Agent 的入口方法：
 
 .. code-block:: python
 
@@ -208,7 +275,7 @@
        participant CC as 上下文压缩
        participant API as LLM API
        participant TE as 工具执行引擎
-   
+
        User->>RC: user_message + conversation_history
        RC->>RC: 输入清洗 (surrogate, memory-context)
        RC->>SP: 构建或加载缓存系统提示词
@@ -216,13 +283,13 @@
        RC->>CC: 预压缩检查 (preflight)
        CC-->>RC: 压缩后的 messages (如果需要)
        RC->>RC: 注入插件上下文 (pre_llm_call)
-   
+
        loop 主循环: api_call_count < max_iterations
            RC->>RC: 检查中断 + 消费迭代预算
            RC->>RC: 构建 api_messages (注入记忆/插件上下文)
            RC->>RC: 应用 Anthropic prompt caching
            RC->>RC: 消息清洗 (surrogate/ASCII)
-   
+
            loop 内部重试: retry_count < 3
                RC->>API: 流式 API 调用
                alt 成功
@@ -237,12 +304,12 @@
                    end
                end
            end
-   
+
            RC->>RC: 解析 response (统一格式)
            alt finish_reason == "length"
                RC->>RC: 截断处理 (continuation/retry)
            end
-   
+
            alt 有 tool_calls
                RC->>RC: 验证工具名 + 修复幻觉
                RC->>RC: 验证 JSON 参数
@@ -254,14 +321,14 @@
                RC-->>User: final_response
            end
        end
-   
+
        RC->>RC: 会话持久化 + 资源清理
        RC-->>User: 返回结果字典
 
 步骤详解
 ^^^^^^^^^^
 
-**步骤 1-3：输入准备（第 8696-8766 行）**
+**步骤 1-3：输入准备**
 
 .. code-block:: python
 
@@ -286,11 +353,16 @@
 为什么要移除 ``<memory-context>`` 块？因为外部记忆提供商（如 Honcho）在保存消息时
 可能将注入的上下文块也保存了，导致下一轮用户消息中出现过期的记忆标签。
 
-**步骤 4-5：系统提示词与预压缩（第 8835-8943 行）**
+每轮对话开始时，即使上一轮未激活回退模型，``_fallback_index`` 也会被重置。
+这个修复确保回退链的索引不会跨轮次累积，避免下一轮首次错误时跳过回退链中的
+早期提供商。
+
+**步骤 4-5：系统提示词与预压缩**
 
 系统提示词采用**缓存策略** ：首次构建后缓存在 ``_cached_system_prompt`` 中，
 后续调用直接复用。这对于 Anthropic 的 prompt caching 至关重要——
 如果系统提示词在每轮对话中都变化，前缀缓存就会失效，导致输入成本大幅增加。
+提示词构建逻辑现位于 ``agent/system_prompt.py``。
 
 对于继续的会话（网关模式，每次消息创建新的 AIAgent 实例），系统提示词从 SQLite
 会话数据库中加载，确保与上一轮完全一致：
@@ -319,7 +391,7 @@
            for _pass in range(3):  # 最多 3 轮压缩
                messages, active_system_prompt = self._compress_context(...)
 
-**步骤 6：主循环结构（第 9030-11298 行）**
+**步骤 6：主循环结构**
 
 主循环的核心结构是一个 ``while`` 循环：
 
@@ -335,26 +407,32 @@
 
 每次循环迭代包含以下步骤：
 
-1. **中断检查** （第 9035 行）：如果用户发送了新消息，``_interrupt_requested`` 为 True，
+1. **中断检查**：如果用户发送了新消息，``_interrupt_requested`` 为 True，
    循环立即中断。
 
-2. **预算消费** （第 9049-9055 行）：通过 ``iteration_budget.consume()`` 消费一个迭代。
+2. **预算消费**：通过 ``iteration_budget.consume()`` 消费一个迭代。
    如果预算耗尽，设置 ``_budget_grace_call = True`` 允许一次额外迭代。
 
-3. **API 消息构建** （第 9096-9213 行）：从 ``messages`` 构建发送给 API 的消息副本，
+3. **API 消息构建**：从 ``messages`` 构建发送给 API 的消息副本，
    注入记忆上下文、插件上下文、应用 prompt caching、清洗 surrogate 字符等。
    注意这里使用的是副本（``api_msg = msg.copy()``），原始 ``messages`` 不被修改。
 
-4. **API 调用** （第 9264-9920 行）：在内部重试循环中调用 LLM API。
+4. **API 调用**：在内部重试循环中调用 LLM API。
    最多重试 3 次，每次重试间使用抖动指数退避。
 
-5. **响应解析** （第 10839-10870 行）：将不同 API 模式的响应统一为
+5. **响应解析**：将不同 API 模式的响应统一为
    ``assistant_message`` 和 ``finish_reason`` 。
 
-6. **工具调用处理** （第 11007-11298 行）：如果有工具调用，验证工具名和参数，
+6. **工具调用处理**：如果有工具调用，验证工具名和参数，
    执行工具，将结果追加到消息列表，然后 ``continue`` 继续循环。
 
-7. **最终回复** （第 11300+ 行）：如果没有工具调用，将内容作为最终回复返回。
+7. **最终回复**：如果没有工具调用，将内容作为最终回复返回。
+
+当 ``finish_reason`` 为 ``"length"`` 时（模型因上下文窗口耗尽而被截断），
+Hermes 需要拼接续传前缀来恢复输出。重构中引入了一个性能优化：使用
+``list`` + ``str.join()`` 替代反复的字符串拼接来构建续传前缀，
+避免了 O(n^2) 的字符串分配开销。在大上下文场景下，这个优化可以显著减少
+内存分配次数。
 
 第三节：流式架构
 ------------------
@@ -426,7 +504,8 @@ Hermes 的核心设计之一是将所有这些不同的响应格式统一为
 流式数据的累积
 ^^^^^^^^^^^^^^^^
 
-流式 API 调用通过 ``_interruptible_streaming_api_call()`` 实现。
+流式 API 调用通过 ``_interruptible_streaming_api_call()`` （现位于
+``agent/chat_completion_helpers.py``）实现。
 这个方法的核心挑战是：**如何在流式接收过程中区分文本内容和工具调用？**
 
 OpenAI 的流式响应中，工具调用的 ``delta`` 对象包含 ``function.name`` 和
@@ -483,7 +562,8 @@ OpenAI 的流式响应中，工具调用的 ``delta`` 对象包含 ``function.na
        class STREAM_CB,THINK_CB,REASON_CB,DISPLAY info
        class RESULT success
 
-一个关键的流式处理细节是 **stale stream 检测** ：Hermes 维护了一个 90 秒的
+一个关键的流式处理细节是 **stale stream 检测** （诊断逻辑现位于 ``agent/stream_diag.py``）：
+Hermes 维护了一个 90 秒的
 陈旧流检测器。如果在 90 秒内没有收到任何新的 chunk，就认为连接已经僵死，
 主动中断并触发重试。这是处理提供商"保持连接活跃但不发送数据"情况的防护措施。
 
@@ -525,8 +605,7 @@ Hermes 的主循环是纯同步代码（使用 ``time.sleep()`` 而非 ``await a
    而异步代码中的异常可能在不同的事件循环迭代中抛出。
 
 代价是需要手动管理事件循环（``_tool_loop`` 、``_worker_loop``），
-但这比处理嵌套事件循环的问题更简单。``model_tools.py`` 第 39-125 行
-详细实现了这个桥接层。
+但这比处理嵌套事件循环的问题更简单。``model_tools.py`` 详细实现了这个桥接层。
 
 第四节：错误分类与恢复
 ------------------------
@@ -647,11 +726,11 @@ Hermes 的错误分类系统（``agent/error_classifier.py``）定义了 14 种�
 1. **提供商特定模式优先** ，因为 Anthropic 的 thinking_signature 错误可能被
    OpenRouter 包装后表现为 400，如果不先检查就会被误分类为 format_error。
 
-2. **402 需要特殊消歧** （第 527-553 行）：有些 402 是临时的使用配额（
+2. **402 需要特殊消歧**：有些 402 是临时的使用配额（
    "usage limit, try again in 5 minutes"），不应被当作计费耗尽处理。
    ``_classify_402()`` 通过检查 "try again"、"resets at" 等临时信号来区分。
 
-3. **服务器断连 + 大会话可能是上下文溢出** （第 397-406 行）：
+3. **服务器断连 + 大会话可能是上下文溢出** ：
    当会话有大量消息时，提供商可能直接断开连接而不是返回有意义的错误。
    这个启发式检查必须在通用传输错误之前，否则会永远被归类为 timeout。
 
@@ -681,28 +760,28 @@ jitter 的种子使用 ``time.time_ns() ^ (counter * 0x9E3779B9)`` 来保证
 
    stateDiagram-v2
        [*] --> Normal
-   
+
        Normal --> Success : API returns valid response
        Normal --> ErrorClassify : Exception thrown
-   
+
        ErrorClassify --> CredRotation : auth/billing/rate_limit
        ErrorClassify --> CtxCompress : context_overflow/payload_too_large
        ErrorClassify --> ProviderFallback : model_not_found/auth_permanent
        ErrorClassify --> JitterBackoff : overloaded/server_error/unknown
        ErrorClassify --> Abort : format_error after 3 retries
-   
+
        CredRotation --> Normal : Credentials valid
        CredRotation --> ProviderFallback : No available credentials
-   
+
        CtxCompress --> Normal : Compression succeeded
        CtxCompress --> Abort : Compression failed
-   
+
        ProviderFallback --> Normal : Fallback provider available
        ProviderFallback --> Abort : No fallback available
-   
+
        JitterBackoff --> Normal : retry_count less than max_retries
        JitterBackoff --> ProviderFallback : retry_count exceeded
-   
+
        Success --> [*]
        Abort --> [*]
 
@@ -710,16 +789,21 @@ jitter 的种子使用 ``time.time_ns() ^ (counter * 0x9E3779B9)`` 来保证
 （``_fallback_chain``），按优先级排列的备用提供商列表。当主提供商持续失败时，
 ``_try_activate_fallback()`` 会依次尝试回退链中的提供商。回退是临时的——
 下一轮对话开始时，``_restore_primary_runtime()`` 会恢复主提供商。
+回退激活和恢复的辅助逻辑现位于 ``agent/agent_runtime_helpers.py``。
 
 第五节：工具执行引擎
 ----------------------
+
+工具执行引擎的核心逻辑已从 ``run_agent.py`` 提取到 ``agent/tool_executor.py``，
+工具分发辅助（参数强制转换、幻觉修复、并行/顺序决策）提取到
+``agent/tool_dispatch_helpers.py``。
 
 并行 vs 顺序决策
 ~~~~~~~~~~~~~~~~~~
 
 当 LLM 在一次响应中返回多个工具调用时，Hermes 需要决定是并行执行还是顺序执行。
 
-决策逻辑位于 ``_should_parallelize_tool_batch()`` 函数（第 267 行）：
+决策逻辑位于 ``_should_parallelize_tool_batch()`` 函数：
 
 .. mermaid::
    :name: parallel-vs-sequential
@@ -764,7 +848,7 @@ Agent 循环拦截工具
 ^^^^^^^^^^^^^^^^^^^^
 
 某些工具需要访问 Agent 级别的状态，不能通过通用的工具注册中心分发。
-这些工具在 ``_invoke_tool()`` （第 7705 行）中被拦截：
+这些工具在 ``_invoke_tool()`` 中被拦截（拦截逻辑现位于 ``agent/tool_executor.py``）：
 
 .. list-table::
    :header-rows: 1
@@ -827,7 +911,7 @@ Agent 循环拦截工具
        alt Blocked by plugin
            IT-->>MainLoop: blocked error message
        end
-   
+
        IT->>Intercept: Check todo/memory/session_search
        alt Intercepted
            Intercept->>Handler: Direct call to tool
@@ -844,13 +928,14 @@ Agent 循环拦截工具
            HFC->>Plugin: post_tool_call hook
            HFC-->>IT: result JSON
        end
-   
+
        IT-->>MainLoop: tool result string
 
-**参数类型强制转换** （``model_tools.py:334``）是一个容易被忽略但至关重要的步骤。
+**参数类型强制转换** （``model_tools.py``）是一个容易被忽略但至关重要的步骤。
 LLM 经常返回错误类型的参数——例如用字符串 ``"42"`` 代替整数 ``42`` ，
 用字符串 ``"true"`` 代替布尔值 ``true`` 。``coerce_tool_args()`` 根据工具的
 JSON Schema 定义自动修正这些类型不匹配，避免下游处理器崩溃。
+参数强制转换和幻觉修复逻辑现位于 ``agent/tool_dispatch_helpers.py``。
 
 工具名幻觉修复
 ^^^^^^^^^^^^^^^^
@@ -872,7 +957,7 @@ LLM 有时会幻觉出不存在的工具名。Hermes 通过 ``_repair_tool_call(
 IterationBudget 的工作原理
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``IterationBudget`` （第 170 行）是一个线程安全的迭代计数器：
+``IterationBudget`` 是一个线程安全的迭代计数器：
 
 .. code-block:: python
 
@@ -943,8 +1028,8 @@ Hermes 选择了**方案 A**——``delegate_task`` 将父 Agent 的 ``iteration
 
 1. **阶段一：注入预算耗尽提示** （设置 ``_budget_exhausted_injected = True``）。
    向消息列表追加一条系统消息，告知模型"这是最后一次迭代，请总结你的工作"。
-   注意 Hermes 实际上不在预算耗尽时注入中间警告——注释说明"中间压力警告导致模型过早放弃"
-   （#7915），所以只在真正耗尽时才通知一次。
+   注意 Hermes 实际上不在预算耗尽时注入中间警告——注释说明"中间压力警告导致模型过早放弃"，
+   所以只在真正耗尽时才通知一次。
 
 2. **阶段二：宽限调用** （``_budget_grace_call = True``）。允许模型进行一次额外的
    API 调用来生成总结。如果这次调用仍然返回工具调用而非文本，循环强制退出。
@@ -955,6 +1040,9 @@ Hermes 选择了**方案 A**——``delegate_task`` 将父 Agent 的 ``iteration
 
 第七节：会话持久化与清理
 --------------------------
+
+上下文压缩和会话持久化的核心逻辑已分别提取到 ``agent/conversation_compression.py``
+和 ``agent/agent_runtime_helpers.py``，后台审查逻辑提取到 ``agent/background_review.py``。
 
 循环退出时的处理
 ~~~~~~~~~~~~~~~~~~
@@ -967,7 +1055,7 @@ Hermes 选择了**方案 A**——``delegate_task`` 将父 Agent 的 ``iteration
    self._cleanup_task_resources(effective_task_id)  # 清理 VM 和浏览器资源
    self._persist_session(messages, conversation_history)  # 持久化会话
 
-``_persist_session()`` （第 2577 行）执行双重持久化：
+``_persist_session()`` 执行双重持久化：
 
 1. **JSON 日志** ：通过 ``_save_session_log()`` 将消息列表写入 JSON 文件。
    这是增量写入的——每次工具迭代后都会调用，确保即使被强制终止也有进度记录。
@@ -994,7 +1082,8 @@ SQLite 数据库支持结构化查询（如 ``session_search`` 工具需要搜�
 资源清理
 ~~~~~~~~~~
 
-``_cleanup_task_resources()`` （第 2390 行）负责清理每次对话的资源：
+``_cleanup_task_resources()`` （现位于 ``agent/agent_runtime_helpers.py``）
+负责清理每次对话的资源：
 
 - **终端 VM** ：如果终端环境不是持久化的（``persistent_filesystem=False``），
   调用 ``cleanup_vm()`` 销毁沙箱。持久化环境由空闲回收器在超时后清理。
@@ -1008,14 +1097,16 @@ SQLite 数据库支持结构化查询（如 ``session_search`` 工具需要搜�
 后台审查线程
 ^^^^^^^^^^^^^^
 
-在主循环退出后，Hermes 可能会启动一个后台线程来审查对话内容：
+在主循环退出后，Hermes 可能会启动一个后台线程来审查对话内容。
+后台审查的完整逻辑（审查提示词构建、记忆审查、技能审查）现位于
+``agent/background_review.py``。
 
 .. code-block:: python
 
    if _should_review_memory or _should_review_skills:
        self._spawn_background_review(messages_snapshot, ...)
 
-``_spawn_background_review()`` （第 2458 行）创建一个新的 AIAgent 实例，
+``_spawn_background_review()`` 创建一个新的 AIAgent 实例，
 在后台线程中运行，让模型回顾对话并自动保存值得记住的信息到长期记忆或技能库。
 
 关键设计决策：
@@ -1070,6 +1161,10 @@ SQLite 数据库支持结构化查询（如 ``session_search`` 工具需要搜�
 7. **防御性编程是常态。** 从安全 stdio 包装器到 surrogate 清洗，
    从 JSON 参数修复到工具名幻觉修复，生产级 Agent 的代码中充满了防御性措施。
    这些措施在 demo 中不需要，但在 7x24 运行的服务中至关重要。
+
+8. **模块化重构提升可维护性，无需改变架构。** 单一类的状态管理模式在 Agent 系统中
+   有其合理性，但这不意味着所有代码都要放在一个文件里。通过将方法提取到独立模块，
+   可以在保留设计优势的同时获得更好的代码组织和可测试性。
 
 在下一章中，我们将深入 Hermes 的工具系统，理解工具如何通过自注册模式加入系统，
 以及调度器如何处理参数转换、插件拦截和结果持久化。

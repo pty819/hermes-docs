@@ -278,8 +278,8 @@ CommandDef 数据类
      - 代表命令
      - 数量
    * - Session
-     - /new, /clear, /history, /save, /retry, /undo, /title, /branch, /compress, /rollback, /stop
-     - ~18
+     - /new, /clear, /history, /save, /retry, /undo, /title, /branch, /compress, /rollback, /stop, /exit --delete, /subgoal
+     - ~20
    * - Configuration
      - /model, /provider, /personality, /skin, /yolo, /reasoning, /fast, /voice
      - ~10
@@ -1108,6 +1108,19 @@ Account Usage 用量追踪
 
 除了上述重量级子系统外，CLI 层面还有若干值得关注的改进：
 
+**hermes send 命令** （#27188）：一个全新的管道式消息发送命令。
+用户可以将任何脚本的输出通过管道发送到任意消息平台：
+
+.. code-block:: bash
+
+    # 将构建脚本输出发送到 Telegram
+    ./build.sh 2>&1 | hermes send --to telegram
+
+    # 将测试结果发送到 Slack
+    pytest --tb=short 2>&1 | hermes send --to slack --channel ci-alerts
+
+这使得 CI/CD 集成和自动化脚本通知变得极为简便，无需编写平台特定的 API 调用。
+
 **Slack CLI** （``hermes_cli/slack_cli.py``）：提供 Slack 集成的专用命令，
 支持从终端直接向 Slack 频道发送消息或拉取对话上下文。
 
@@ -1124,6 +1137,28 @@ Account Usage 用量追踪
 
 **Startup Tips** ：新增约 100 条 CLI 启动提示，
 在 REPL 启动时随机展示，涵盖快捷键技巧、隐藏功能、最佳实践等。
+
+**/exit --delete 标志** （#27101）：退出时可选删除会话。
+``/exit --delete`` 命令在退出 REPL 的同时从会话数据库中移除当前会话记录，
+适合处理敏感任务后的清理。
+
+**后台任务指示器** （#27175）：当 ``/background`` 任务正在运行时，
+状态栏显示 ``▶ N`` 指示器（N 为运行中的后台任务数量）。这让用户
+始终了解后台 Agent 的活动状态，避免误以为系统空闲。
+
+**YOLO 模式警告** ：当 Agent 以 YOLO 模式（跳过所有审批）运行时，
+启动 Banner 和状态栏会显示明显的警告标识。这防止用户意外在无审批模式下
+执行危险操作而不自知。
+
+**会话摘要** （#27176）：``/status`` 命令现在会在输出末尾附加当前会话的
+简要摘要——包括已执行的命令数、修改的文件列表和累计费用估算。
+
+**/subgoal 命令** （#25449）：用户可以通过 ``/subgoal`` 向活跃的 ``/goal``
+追加新的验收标准。这允许在任务执行过程中增量地细化和调整目标。
+
+**Shift+Enter 换行** ：CLI 现在识别 ``Shift+Enter`` 作为换行键，
+与 ``Ctrl+Enter`` 行为一致，改善在 Windows Terminal 和 SSH 环境下的
+多行输入体验。
 
 源码文件索引
 ==============

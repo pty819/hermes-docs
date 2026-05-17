@@ -280,6 +280,13 @@ register_tool
 
 - ``emoji`` ：在 TUI 中显示的图标。
 
+工具覆盖标志
+~~~~~~~~~~~~~
+
+``register_tool`` 新增 ``override`` 布尔参数。当设为 ``True`` 时，插件注册的工具可以替换同名的内置工具。此前，只有 MCP 工具无法覆盖内置工具——这一限制同样适用于插件工具。现在，通过显式声明 ``override=True`` ，插件可以提供增强版的内置工具实现，例如为 ``bash`` 工具添加沙箱隔离、为 ``read_file`` 工具添加内容审计等。
+
+需要注意的是，覆盖内置工具是一项高风险操作，仅在用户明确知情和配置的情况下才应启用。默认情况下 ``override=False`` ，保持向后兼容。
+
 register_hook
 ===============
 
@@ -314,6 +321,23 @@ dispatch_tool
 ===============
 
 通过全局工具注册表派发工具调用。插件斜杠命令可以使用此方法调用其他工具（如 ``delegate_task``），而无需直接访问 Agent 实例。在 CLI 模式下自动注入 ``parent_agent`` 上下文，在网关模式下优雅降级。
+
+ctx.llm()
+===========
+
+``ctx.llm()`` 方法允许插件直接发起任意 LLM 调用，而无需自行构建 Provider 客户端或处理认证逻辑。方法签名::
+
+    def llm(self, prompt: str, *, model: str = None, provider: str = None,
+            system: str = None, max_tokens: int = 1024,
+            temperature: float = None) -> str:
+
+核心特性：
+
+- **Provider 自动路由** ：如果不指定 ``provider`` ，自动使用当前会话的主 Provider 和主模型，确保插件行为与用户配置一致。
+- **完整认证透传** ：复用 Hermes 的凭证池和客户端缓存，无需插件自行管理 API Key 或 OAuth 令牌。
+- **适配器透明** ：自动根据 Provider 类型选择合适的适配器（OpenAI、Anthropic、Bedrock 等），插件无需关心 API 格式差异。
+
+典型使用场景包括：插件需要对工具结果进行二次总结、在钩子中生成元数据、或通过 LLM 增强自定义命令的响应质量。
 
 **********************
 生命周期钩子
@@ -632,6 +656,22 @@ Hermes Agent 的内置上下文管理使用 ``ContextCompressor`` 进行上下�
    * - kanban
      - 看板任务管理。包含 Web 仪表板（``dashboard/``）、任务调度器（dispatcher）、
        SQLite 数据库（``kanban_db``），支持多 Agent 并行任务分配和进度追踪。
+   * - simplex-chat
+     - SimpleX Chat 平台集成。SimpleX 是一个以隐私为核心的消息平台，不收集用户数据、
+       不关联用户身份。该插件将 Hermes Agent 对接 SimpleX 协议，允许通过 SimpleX 的
+       端到端加密通道与 Agent 交互，适合对隐私有极高要求的使用场景。
+   * - BrowserProvider ABC
+     - 浏览器操作抽象基类（Abstract Base Class）。``BrowserProvider`` 定义了统一的
+       浏览器交互接口（页面导航、元素操作、截图等），``browserbase``、``browser-use``
+       和 ``firecrawl`` 三个插件已迁移至该模式。通过 ABC 抽象，不同浏览器后端可互换
+       使用，Agent 代码无需关心底层浏览器实现。
+   * - WebSearchProvider ABC
+     - 网页搜索抽象基类。``WebSearchProvider`` 定义了统一的搜索接口（查询、结果解析、
+       速率限制），以下七个搜索插件已迁移至该模式：``brave_free``（Brave Search 免费
+       API）、``ddgs``（DuckDuckGo Search）、``searxng``（SearXNG 自托管）、
+       ``exa``（Exa AI 搜索）、``parallel``（并行多引擎搜索）、``tavily``（Tavily
+       搜索 API）、``firecrawl``（Firecrawl 搜索）。通过 ABC 抽象，Agent 可在
+       不同搜索后端之间无缝切换。
 
 这些插件展示了 Hermes 插件架构的 **广度** ——从基础设施维护（磁盘清理）
 到用户交互（成就系统、看板），所有扩展都遵循相同的 ``plugin.yaml`` + ``register()``
